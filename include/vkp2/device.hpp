@@ -281,6 +281,8 @@ namespace vkp::device {
 
         static void activate(DeviceActivationContext& p_Context, MeshShaders* p_State)
         {
+			p_Context.extensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+
 			p_State->m_MeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
 			p_State->m_MeshShaderFeatures.meshShader = VK_TRUE;
 			if (p_State->taskShadersRequired)
