@@ -2,6 +2,8 @@
 
 #include <volk.h>
 
+#include "base.hpp"
+
 static VkResult createDebugUtilsMessengerEXT(const VkInstance p_Instance, const VkDebugUtilsMessengerCreateInfoEXT* p_CreateInfo, const VkAllocationCallbacks* p_Allocator, VkDebugUtilsMessengerEXT* p_DebugMessenger)
 {
 	const auto l_Func = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(p_Instance, "vkCreateDebugUtilsMessengerEXT"));
@@ -96,13 +98,13 @@ namespace vkp
 	{
 		ReturnData l_Data{};
 
-		vkCreateInstance(&m_createInfo, nullptr, &l_Data.instance);
+		VULKAN_TRY(vkCreateInstance(&m_createInfo, nullptr, &l_Data.instance));
 
 		volkLoadInstance(l_Data.instance);
 
 		if (m_DebugCreateInfo.pfnUserCallback)
 		{
-			createDebugUtilsMessengerEXT(l_Data.instance, &m_DebugCreateInfo, nullptr, &l_Data.debugMessenger);
+			VULKAN_TRY(createDebugUtilsMessengerEXT(l_Data.instance, &m_DebugCreateInfo, nullptr, &l_Data.debugMessenger));
 		}
 
 		return l_Data;

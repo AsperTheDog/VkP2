@@ -4,6 +4,8 @@
 #include <vector>
 #include <volk.h>
 
+#include "base.hpp"
+
 namespace vkp::device {
     struct DeviceActivationContext {
         struct QueueInfo {
@@ -31,17 +33,40 @@ namespace vkp::device {
 
     inline VkDevice DeviceActivationContext::build(VkPhysicalDevice p_PhysicalDevice)
     {
+        constexpr auto checkFeature = []<typename T>(const T & f) {
+            T stub{};
+            stub.sType = f.sType;
+            stub.pNext = f.pNext;
+            return memcmp(&f, &stub, sizeof(T)) != 0;
+        };
+
 		VkDeviceCreateInfo l_CreateInfo{};
 		l_CreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		l_CreateInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 		l_CreateInfo.ppEnabledExtensionNames = extensions.data();
 
-		features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-        features12.pNext = &features13;
-        features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-        features11.pNext = &features12;
-		features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-        features.pNext = &features11;
+        if (checkFeature(features13))
+        {
+            features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+            features12.pNext = &features13;
+        }
+        else
+            features12.pNext = features13.pNext;
+		if (checkFeature(features12))
+		{
+            features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+            features11.pNext = &features12;
+		}
+		else
+			features11.pNext = features12.pNext;
+		if (checkFeature(features11))
+		{
+            features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+            features.pNext = &features11;
+		}
+		else
+			features.pNext = features11.pNext;
+
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 		l_CreateInfo.pNext = &features;
 
@@ -59,7 +84,7 @@ namespace vkp::device {
 		l_CreateInfo.pQueueCreateInfos = l_QueueCreateInfos.data();
 
         VkDevice l_Device;
-		vkCreateDevice(p_PhysicalDevice, &l_CreateInfo, nullptr, &l_Device);
+        VULKAN_TRY(vkCreateDevice(p_PhysicalDevice, &l_CreateInfo, nullptr, &l_Device));
 		return l_Device;
     }
 
@@ -227,6 +252,22 @@ namespace vkp::device {
         
         static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, MeshShaders* p_State)
         {
+			uint32_t l_AvailableExtensionCount = 0;
+			vkEnumerateDeviceExtensionProperties(p_Device, nullptr, &l_AvailableExtensionCount, nullptr);
+			std::vector<VkExtensionProperties> l_AvailableExtensions(l_AvailableExtensionCount);
+			vkEnumerateDeviceExtensionProperties(p_Device, nullptr, &l_AvailableExtensionCount, l_AvailableExtensions.data());
+			bool l_MeshShaderExtensionFound = false;
+			for (const VkExtensionProperties& l_Extension : l_AvailableExtensions)
+			{
+				if (strcmp(l_Extension.extensionName, VK_EXT_MESH_SHADER_EXTENSION_NAME) == 0)
+				{
+					l_MeshShaderExtensionFound = true;
+					break;
+				}
+			}
+			if (!l_MeshShaderExtensionFound)
+				return 0;
+
 			VkPhysicalDeviceMeshShaderFeaturesEXT l_MeshShaderFeatures{};
 			l_MeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
 			VkPhysicalDeviceFeatures2 l_Features2{};
