@@ -26,14 +26,16 @@ static void destroyDebugUtilsMessengerEXT(const VkInstance p_Instance, const VkD
 namespace vkp
 {
 
-	InstanceBuilder::InstanceBuilder(const uint32_t p_ApiVersion)
+	InstanceBuilder::InstanceBuilder()
 	{
+		vkEnumerateInstanceVersion(&m_appInfo.apiVersion);
+		m_appInfo.apiVersion = std::min(m_appInfo.apiVersion, VK_HEADER_VERSION_COMPLETE);
+
 		m_appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 		m_appInfo.pApplicationName = "Vulkan App";
 		m_appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 		m_appInfo.pEngineName = "No Engine";
 		m_appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-		m_appInfo.apiVersion = p_ApiVersion;
 
 		m_createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		m_createInfo.pApplicationInfo = &m_appInfo;

@@ -17,7 +17,7 @@ namespace vkp
 
 		using DebugCallback = VkBool32(*)(VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, const VkDebugUtilsMessengerCallbackDataEXT*, void*);
 
-		explicit InstanceBuilder(uint32_t p_ApiVersion);
+		explicit InstanceBuilder();
 		InstanceBuilder& setAppInfo(std::string_view p_ApplicationName, uint32_t p_ApplicationVersion, std::string_view p_EngineName, uint32_t p_EngineVersion);
 		InstanceBuilder& enableValidationLayers(DebugCallback p_Callback = nullptr, VkDebugUtilsMessageSeverityFlagsEXT p_Severity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
 		InstanceBuilder& addLayer(const char* p_Layer);

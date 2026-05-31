@@ -7,12 +7,25 @@
 #include "base.hpp"
 
 namespace vkp::device {
-    struct DeviceActivationContext {
-        struct QueueInfo {
-            uint32_t queueFamilyIndex;
-            uint32_t count;
-        };
+    struct DeviceData
+    {
+		VkPhysicalDevice physicalDevice;
+        VkDevice device;
+		VolkDeviceTable deviceTable;
+    };
 
+    struct QueueInfo {
+        uint32_t queueFamilyIndex;
+        uint32_t count;
+    };
+
+    struct DeviceReturn
+    {
+        VkDevice device;
+		std::vector<QueueInfo> queues;
+    };
+
+    struct DeviceActivationContext {
         std::vector<const char*> extensions;
         std::vector<QueueInfo> queuesToCreate;
 
@@ -363,10 +376,13 @@ namespace vkp::device {
     }
 
     template<DeviceEvaluation P>
-	VkDevice buildFromEval(const VkPhysicalDevice p_Device, P* p_Preset)
+	DeviceReturn buildFromEval(const VkPhysicalDevice p_Device, P* p_Preset)
 	{
 		DeviceActivationContext l_Context;
 		p_Preset->activate(l_Context, p_Preset);
-		return l_Context.build(p_Device);
+		DeviceReturn l_Return;
+		l_Return.device = l_Context.build(p_Device);
+        l_Return.queues.insert(l_Return.queues.end(), l_Context.queuesToCreate.begin(), l_Context.queuesToCreate.end());
+		return l_Return;
 	}
 }
