@@ -62,12 +62,12 @@ private:
 
 	Signal<Size> m_OnPixelResize;
 	Signal<Size> m_OnResize;
-	Signal<float, float> m_OnMouseMoved;			// relX, relY, isMouseCaptured
-	Signal<uint32_t> m_OnKeyPressed;				// key, isMouseCaptured
-	Signal<uint32_t> m_OnKeyReleased;				// key, isMouseCaptured
-	Signal<uint32_t> m_OnMouseButtonPressed;		// button, isMouseCaptured
-	Signal<uint32_t> m_OnMouseButtonReleased;		// button, isMouseCaptured
-	Signal<float> m_OnMouseScrolled;				// y, isMouseCaptured
+	Signal<float, float> m_OnMouseMoved;			// relX, relY
+	Signal<uint32_t> m_OnKeyPressed;				// key
+	Signal<uint32_t> m_OnKeyReleased;				// key
+	Signal<uint32_t> m_OnMouseButtonPressed;		// button
+	Signal<uint32_t> m_OnMouseButtonReleased;		// button
+	Signal<float> m_OnMouseScrolled;				// y
 	Signal<float> m_OnEventsProcessed;				// delta
 	Signal<bool> m_OnMouseCaptureChanged;			// isMouseCaptured
 	Signal<SDL_Event*> m_OnEventCaptured;			// raw SDL event

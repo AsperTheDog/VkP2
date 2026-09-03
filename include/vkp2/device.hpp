@@ -9,8 +9,8 @@
 namespace vkp::device {
     struct DeviceData
     {
-		VkPhysicalDevice physicalDevice;
-        VkDevice device;
+		VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+        VkDevice device = VK_NULL_HANDLE;
 		VolkDeviceTable deviceTable;
     };
 
@@ -21,7 +21,7 @@ namespace vkp::device {
 
     struct DeviceReturn
     {
-        VkDevice device;
+        VkDevice device = VK_NULL_HANDLE;
 		std::vector<QueueInfo> queues;
     };
 
@@ -44,9 +44,9 @@ namespace vkp::device {
 		}
     };
 
-    inline VkDevice DeviceActivationContext::build(VkPhysicalDevice p_PhysicalDevice)
+    inline VkDevice DeviceActivationContext::build(const VkPhysicalDevice p_PhysicalDevice)
     {
-        constexpr auto checkFeature = []<typename T>(const T & f) {
+        constexpr auto checkFeature = []<typename T>(const T & f){
             T stub{};
             stub.sType = f.sType;
             stub.pNext = f.pNext;
@@ -138,44 +138,39 @@ namespace vkp::device {
             uint32_t l_TotalGroupScore = 0;
             bool l_Incompatible = false;
 
-            auto l_EvaluateIdx = [&]<size_t I>() 
-        	{
-                if (l_Incompatible) 
-                    return;
+            std::apply([&](auto&... presets){
+                auto eval_one = [&]<typename Preset>(Preset& preset){
+                    if (l_Incompatible)
+                    {
+	                    return;
+                    }
 
-                using CurrentPresetType = std::tuple_element_t<I, std::tuple<SubEvals...>>;
+                    using PresetType = std::remove_cvref_t<Preset>;
+                    const uint32_t score = PresetType::evaluate(p_Device, p_Instance, p_Surface, &preset);
 
-                auto& l_PresetInstance = std::get<I>(p_State->subPresets);
+                    if (score == 0)
+                    {
+	                    l_Incompatible = true;
+                    }
+                    else
+                    {
+	                    l_TotalGroupScore += score;
+                    }
+                };
 
-                const uint32_t score = CurrentPresetType::evaluate(p_Device, p_Instance, p_Surface, &l_PresetInstance);
+                (eval_one(presets), ...);
+            }, p_State->subPresets);
 
-                if (score == 0) 
-                {
-                    l_Incompatible = true;
-                }
-                else 
-                {
-                    l_TotalGroupScore += score;
-                }
-            };
-
-            [&] <size_t... Is>(std::index_sequence<Is...>) { (l_EvaluateIdx.template operator() < Is > (), ...); }(std::make_index_sequence<sizeof...(SubEvals)>{});
-
-            if (l_Incompatible) 
-                return 0;
-            return l_TotalGroupScore;
+            return l_Incompatible ? 0 : l_TotalGroupScore;
         }
 
         static void activate(DeviceActivationContext& p_Context, PresetGroup* p_State)
         {
             assert(p_State);
-            auto l_ActivateIdx = [&]<size_t I>()
-            {
-                using CurrentPresetType = std::tuple_element_t<I, std::tuple<SubEvals...>>;
-                auto& l_PresetInstance = std::get<I>(p_State->subPresets);
-                CurrentPresetType::activate(p_Context, &l_PresetInstance);
-            };
-            [&] <size_t... Is>(std::index_sequence<Is...>) { (l_ActivateIdx.template operator() < Is > (), ...); }(std::make_index_sequence<sizeof...(SubEvals)>{});
+
+            std::apply([&]<typename... Preset>(Preset&... presets){
+                (std::remove_cvref_t<Preset>::activate(p_Context, &presets), ...);
+            }, p_State->subPresets);
         }
     };
 
@@ -191,7 +186,7 @@ namespace vkp::device {
 
         explicit UberQueueFamily(const bool p_DedicatedTransfer = false) : dedicatedTransfer(p_DedicatedTransfer) {}
 
-        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance p_Instance, std::optional<VkSurfaceKHR> p_Surface, UberQueueFamily* p_State)
+        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, const std::optional<VkSurfaceKHR> p_Surface, UberQueueFamily* p_State)
         {
             assert(p_State);
             assert(p_Surface.has_value());
@@ -229,6 +224,7 @@ namespace vkp::device {
         uint32_t m_UberQueueInfo = UINT32_MAX;
     };
 
+    template<bool IncludeRender = true>
     struct LeanVulkan
     {
         static uint32_t evaluate(VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, LeanVulkan*)
@@ -242,16 +238,25 @@ namespace vkp::device {
 			l_Features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 			l_Features2.pNext = &l_Features12;
 			vkGetPhysicalDeviceFeatures2(p_Device, &l_Features2);
-			bool l_Vk13Supported = l_Features13.dynamicRendering && l_Features13.synchronization2;
+			bool l_Vk13Supported = l_Features13.synchronization2;
+            if constexpr (IncludeRender)
+            {
+                l_Vk13Supported = l_Vk13Supported && l_Features13.dynamicRendering;
+            }
 			bool l_Vk12Supported = l_Features12.timelineSemaphore && l_Features12.bufferDeviceAddress && l_Features12.descriptorIndexing;
 			if (l_Vk13Supported && l_Vk12Supported)
+			{
 				return 1;
+			}
 			return 0;
         }
 
         static void activate(DeviceActivationContext& p_Context, LeanVulkan*)
         {
-			p_Context.features13.dynamicRendering = VK_TRUE;
+            if constexpr (IncludeRender)
+            {
+	            p_Context.features13.dynamicRendering = VK_TRUE;
+            }
 			p_Context.features13.synchronization2 = VK_TRUE;
 			p_Context.features12.timelineSemaphore = VK_TRUE;
 			p_Context.features12.bufferDeviceAddress = VK_TRUE;
@@ -263,7 +268,7 @@ namespace vkp::device {
     {
         bool taskShadersRequired = true;
         
-        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, MeshShaders* p_State)
+        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, const MeshShaders* p_State)
         {
 			uint32_t l_AvailableExtensionCount = 0;
 			vkEnumerateDeviceExtensionProperties(p_Device, nullptr, &l_AvailableExtensionCount, nullptr);
@@ -279,7 +284,9 @@ namespace vkp::device {
 				}
 			}
 			if (!l_MeshShaderExtensionFound)
+			{
 				return 0;
+			}
 
 			VkPhysicalDeviceMeshShaderFeaturesEXT l_MeshShaderFeatures{};
 			l_MeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
@@ -299,7 +306,9 @@ namespace vkp::device {
 			p_State->m_MeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
 			p_State->m_MeshShaderFeatures.meshShader = VK_TRUE;
 			if (p_State->taskShadersRequired)
+			{
 				p_State->m_MeshShaderFeatures.taskShader = VK_TRUE;
+			}
 
             p_Context.pNextAdd(&p_State->m_MeshShaderFeatures);
         }
@@ -314,7 +323,7 @@ namespace vkp::device {
 		uint64_t minimalRam = 0;
 		uint32_t minVkVersion = VK_API_VERSION_1_0;
 
-        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, BasicProperties* p_State)
+        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, const BasicProperties* p_State)
         {
 			VkPhysicalDeviceProperties l_Properties{};
 			vkGetPhysicalDeviceProperties(p_Device, &l_Properties);
@@ -333,20 +342,98 @@ namespace vkp::device {
 			const bool l_RamOk = l_TotalRam >= p_State->minimalRam;
 
 			const bool l_VersionOk = l_Properties.apiVersion >= p_State->minVkVersion;
-			return l_TypeOk && l_RamOk && l_VersionOk ? l_TotalRam : 0;
+			return l_TypeOk && l_RamOk && l_VersionOk ? static_cast<uint32_t>(l_TotalRam) : 0;
         }
 
-        static void activate(DeviceActivationContext& p_Context, BasicProperties* p_State) {}
+        static void activate(DeviceActivationContext&, BasicProperties*) {}
     };
 
-	inline auto LeanModern(const uint64_t p_MinimalRam = 0)
-	{
-        return makeGroup(
+    struct Swapchain
+    {
+        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, const std::optional<VkSurfaceKHR> p_Surface, const Swapchain*)
+        {
+            if (!p_Surface.has_value() || *p_Surface == VK_NULL_HANDLE)
+            {
+                return 0;
+            }
+
+            const VkSurfaceKHR l_Surface = *p_Surface;
+
+            uint32_t l_AvailableExtensionCount = 0;
+            vkEnumerateDeviceExtensionProperties(p_Device, nullptr, &l_AvailableExtensionCount, nullptr);
+            std::vector<VkExtensionProperties> l_AvailableExtensions(l_AvailableExtensionCount);
+            vkEnumerateDeviceExtensionProperties(p_Device, nullptr, &l_AvailableExtensionCount, l_AvailableExtensions.data());
+
+            bool l_SwapchainExtensionFound = false;
+            for (const VkExtensionProperties& l_Extension : l_AvailableExtensions)
+            {
+                if (strcmp(l_Extension.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0)
+                {
+                    l_SwapchainExtensionFound = true;
+                    break;
+                }
+            }
+
+            if (!l_SwapchainExtensionFound)
+            {
+                return 0;
+            }
+
+            uint32_t l_QueueFamilyCount = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(p_Device, &l_QueueFamilyCount, nullptr);
+            std::vector<VkQueueFamilyProperties> l_QueueFamilies(l_QueueFamilyCount);
+            vkGetPhysicalDeviceQueueFamilyProperties(p_Device, &l_QueueFamilyCount, l_QueueFamilies.data());
+
+            bool l_PresentSupport = false;
+            for (uint32_t i = 0; i < l_QueueFamilyCount; ++i)
+            {
+                VkBool32 l_Supported = VK_FALSE;
+                vkGetPhysicalDeviceSurfaceSupportKHR(p_Device, i, l_Surface, &l_Supported);
+                if (l_Supported == VK_TRUE)
+                {
+                    l_PresentSupport = true;
+                    break;
+                }
+            }
+
+            if (!l_PresentSupport)
+            {
+                return 0;
+            }
+
+            return 1;
+        }
+
+        static void activate(DeviceActivationContext& p_Context, Swapchain*)
+        {
+            p_Context.extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        }
+    };
+
+    template<bool IncludeRender = true>
+    auto LeanModern(const uint64_t p_MinimalRam = 0)
+    {
+        auto baseGroup = std::make_tuple(
             BasicProperties{ .minimalRam = p_MinimalRam, .minVkVersion = VK_API_VERSION_1_3 },
-            LeanVulkan{},
-			UberQueueFamily{ true }
+            LeanVulkan<IncludeRender>{},
+            UberQueueFamily{ true }
         );
-	}
+
+        auto renderGroup = []{
+            if constexpr (IncludeRender)
+            {
+                return std::make_tuple(Swapchain{});
+            }
+            else
+            {
+                return std::tuple<>{};
+            }
+        }();
+
+        return std::apply([]<typename... Evaluators>(Evaluators&&... args){
+            return makeGroup(std::forward<Evaluators>(args)...);
+        }, std::tuple_cat(baseGroup, renderGroup));
+    }
 
     template<DeviceEvaluation P>
 	std::optional<VkPhysicalDevice> chooseBestPhysicalDevice(VkInstance l_Instance, std::optional<VkSurfaceKHR> l_Surface = std::nullopt, P* p_Preset = nullptr)
@@ -354,7 +441,9 @@ namespace vkp::device {
 		uint32_t l_DeviceCount = 0;
 		vkEnumeratePhysicalDevices(l_Instance, &l_DeviceCount, nullptr);
 		if (l_DeviceCount == 0)
+		{
 			return std::nullopt;
+		}
         std::vector<VkPhysicalDevice> l_Devices(l_DeviceCount);
         vkEnumeratePhysicalDevices(l_Instance, &l_DeviceCount, l_Devices.data());
 

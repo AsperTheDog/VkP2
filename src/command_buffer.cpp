@@ -4,7 +4,7 @@
 namespace vkp {
 	void cmd::CommandPool::init(const VkDevice p_Device, const uint32_t p_QueueFamilyIndex, const VkCommandPoolCreateFlags p_Flags)
 	{
-		VkCommandPoolCreateInfo l_PoolInfo{
+		const VkCommandPoolCreateInfo l_PoolInfo{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 			.flags = p_Flags,
 			.queueFamilyIndex = p_QueueFamilyIndex
@@ -26,10 +26,9 @@ namespace vkp {
 		vkResetCommandPool(p_Device, handle, p_Flags);
 	}
 
-	void cmd::CommandPool::allocate(const VkDevice p_Device, std::span<VkCommandBuffer> p_OutBuffers,
-		const VkCommandBufferLevel p_Level) const
+	void cmd::CommandPool::allocate(const VkDevice p_Device, std::span<VkCommandBuffer> p_OutBuffers, const VkCommandBufferLevel p_Level) const
 	{
-		VkCommandBufferAllocateInfo l_AllocInfo{
+		const VkCommandBufferAllocateInfo l_AllocInfo{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 			.commandPool = handle,
 			.level = p_Level,

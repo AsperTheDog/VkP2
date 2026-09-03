@@ -12,8 +12,8 @@ namespace vkp
 
 	struct SwapchainProperties
     {
-        VkSurfaceFormatKHR format;
-        VkExtent2D extent;
+        VkSurfaceFormatKHR format{};
+        VkExtent2D extent{};
         uint32_t framesInFlight;
         VkPresentModeKHR presentMode;
     };
@@ -24,7 +24,7 @@ namespace vkp
         Swapchain(const device::DeviceData& p_DeviceData, VkSurfaceKHR p_Surface, uint32_t p_FramesInFlight, VkExtent2D p_Extent, VkPresentModeKHR p_PresentMode);
 
 		VkSwapchainKHR swapchain;
-		SwapchainProperties properties;
+		SwapchainProperties properties{};
 
 		std::vector<VkImage> images;
         std::vector<VkImageView> imageViews;

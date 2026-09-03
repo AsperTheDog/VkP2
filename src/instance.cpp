@@ -77,7 +77,9 @@ namespace vkp
 	InstanceBuilder& InstanceBuilder::addLayers(const std::span<const char* const> p_Layers)
 	{
 		for (const char* l_Layer : p_Layers)
+		{
 			addLayer(l_Layer);
+		}
 		return *this;
 	}
 
@@ -92,7 +94,9 @@ namespace vkp
 	InstanceBuilder& InstanceBuilder::addExtensions(std::span<const char* const> p_Extensions)
 	{
 		for (const char* l_Extension : p_Extensions)
+		{
 			addExtension(l_Extension);
+		}
 		return *this;
 	}
 

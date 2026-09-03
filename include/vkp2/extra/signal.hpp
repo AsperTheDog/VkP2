@@ -17,7 +17,9 @@ public:
 	template <typename T>
 	void connect(T* p_Instance, void (T::* p_Method)(Args...))
 	{
-		Func l_Func = [=](Args... p_Args) { return (p_Instance->*p_Method)(p_Args...); };
+		Func l_Func = [=](Args... p_Args){
+			return (p_Instance->*p_Method)(p_Args...);
+		};
 		m_Funcs.push_back(l_Func);
 	}
 

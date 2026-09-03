@@ -9,7 +9,6 @@ include(FetchContent)
 FetchContent_Declare(volk
     GIT_REPOSITORY https://github.com/zeux/volk.git
     GIT_TAG vulkan-sdk-1.3.296.0
-    SOURCE_SUBDIR _not_built
 )
 FetchContent_MakeAvailable(volk)
 
@@ -22,36 +21,44 @@ FetchContent_MakeAvailable(VulkanMemoryAllocator)
 
 find_package(Vulkan REQUIRED)
 
+find_library(SLANG_LIBRARY
+    NAMES slang
+    HINTS
+        "$ENV{VULKAN_SDK}/Lib"
+        "$ENV{VULKAN_SDK}/lib"
+        "${Vulkan_INCLUDE_DIRS}/../Lib"
+        "${Vulkan_INCLUDE_DIRS}/../lib"
+)
+
+if(NOT SLANG_LIBRARY)
+    message(FATAL_ERROR "Could not find slang.lib! Ensure VULKAN_SDK environment variable is set.")
+endif()
+
 file(GLOB_RECURSE VkP2_SOURCES CONFIGURE_DEPENDS
     "src/*.cpp"
     "src/*.hpp"
     "include/*.hpp"
 )
 
-add_library(VkP2 STATIC
-    ${VkP2_SOURCES}
-    "${volk_SOURCE_DIR}/volk.c"
-)
+add_library(VkP2 STATIC ${VkP2_SOURCES})
 add_library(VkP2::VkP2 ALIAS VkP2)
 
 target_include_directories(VkP2 PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
-    "$ENV{VULKAN_SDK}/Include"
-    "${volk_SOURCE_DIR}"
+    ${Vulkan_INCLUDE_DIRS}
     "${vulkanmemoryallocator_SOURCE_DIR}/include"
 )
+
 target_include_directories(VkP2 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include/vkp2
 )
 
-target_link_directories(VkP2 PUBLIC
-    "$ENV{VULKAN_SDK}/Lib"
-)
-
 target_link_libraries(VkP2 PUBLIC
-    slang
+    volk
+    ${SLANG_LIBRARY}
+    Vulkan::Vulkan
 )
 
 target_compile_definitions(VkP2 PUBLIC VK_NO_PROTOTYPES=1)

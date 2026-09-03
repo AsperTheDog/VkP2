@@ -37,21 +37,23 @@ namespace vkp
         VkSurfaceCapabilitiesKHR l_Capabilities;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(p_DeviceData.physicalDevice, p_Surface, &l_Capabilities);
 
-        VkSwapchainCreateInfoKHR l_SwapchainCreateInfo{};
-        l_SwapchainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        l_SwapchainCreateInfo.surface = p_Surface;
-        l_SwapchainCreateInfo.minImageCount = properties.framesInFlight + 1;
-        l_SwapchainCreateInfo.imageFormat = properties.format.format;
-        l_SwapchainCreateInfo.imageColorSpace = properties.format.colorSpace;
-        l_SwapchainCreateInfo.imageExtent = p_NewExtent;
-        l_SwapchainCreateInfo.imageArrayLayers = 1;
-        l_SwapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        l_SwapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        l_SwapchainCreateInfo.preTransform = l_Capabilities.currentTransform;
-        l_SwapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        l_SwapchainCreateInfo.presentMode = properties.presentMode;
-        l_SwapchainCreateInfo.clipped = VK_TRUE;
-        l_SwapchainCreateInfo.oldSwapchain = swapchain;
+        const VkSwapchainCreateInfoKHR l_SwapchainCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .pNext = nullptr,
+	        .surface = p_Surface,
+	        .minImageCount = properties.framesInFlight + 1,
+	        .imageFormat = properties.format.format,
+        	.imageColorSpace = properties.format.colorSpace,
+	        .imageExtent = p_NewExtent,
+	        .imageArrayLayers = 1,
+	        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+	        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+	        .preTransform = l_Capabilities.currentTransform,
+	        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+	        .presentMode = properties.presentMode,
+	        .clipped = VK_TRUE,
+	        .oldSwapchain = swapchain
+        };
 
         const VkSwapchainKHR l_OldSwapchain = swapchain;
         VULKAN_TRY(p_DeviceData.deviceTable.vkCreateSwapchainKHR(p_DeviceData.device, &l_SwapchainCreateInfo, nullptr, &swapchain));
@@ -71,19 +73,27 @@ namespace vkp
         VULKAN_TRY(p_DeviceData.deviceTable.vkGetSwapchainImagesKHR(p_DeviceData.device, swapchain, &l_ImageCount, images.data()));
         for (uint32_t l_Index = 0; l_Index < l_ImageCount; l_Index++)
         {
-            VkImageViewCreateInfo l_ImageViewCreateInfo{ .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-            l_ImageViewCreateInfo.image = images[l_Index];
-            l_ImageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            l_ImageViewCreateInfo.format = properties.format.format;
-            l_ImageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-            l_ImageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-            l_ImageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-            l_ImageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-            l_ImageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            l_ImageViewCreateInfo.subresourceRange.baseMipLevel = 0;
-            l_ImageViewCreateInfo.subresourceRange.levelCount = 1;
-            l_ImageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-            l_ImageViewCreateInfo.subresourceRange.layerCount = 1;
+            VkImageViewCreateInfo l_ImageViewCreateInfo{
+	            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .pNext = nullptr,
+	            .image = images[l_Index],
+	            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+	            .format = properties.format.format,
+                .components{
+	                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+	                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+	                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+	                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+                },
+                .subresourceRange{
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                }
+            };
+
             VULKAN_TRY(p_DeviceData.deviceTable.vkCreateImageView(p_DeviceData.device, &l_ImageViewCreateInfo, nullptr, &imageViews[l_Index]));
         }
 	}

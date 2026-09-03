@@ -8,7 +8,7 @@
 
 void Window::initMaximized(const std::string_view p_Name)
 {
-	init({ 800, 600 }, p_Name, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+	init({ .width = 800, .height = 600 }, p_Name, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
 }
 
 void Window::init(const Size p_Size, const std::string_view p_Name, const SDL_WindowFlags p_Flags)
@@ -16,13 +16,17 @@ void Window::init(const Size p_Size, const std::string_view p_Name, const SDL_Wi
 	if (!s_SDLInitialized)
 	{
 		if (!SDL_Init(SDL_INIT_VIDEO))
+		{
 			throw std::runtime_error("Failed to initialize SDL: " + std::string(SDL_GetError()));
+		}
 		s_SDLInitialized = true;
 	}
 
-	m_Window = SDL_CreateWindow(p_Name.data(), p_Size.width, p_Size.height, SDL_WINDOW_VULKAN | p_Flags);
+	m_Window = SDL_CreateWindow(p_Name.data(), static_cast<int>(p_Size.width), static_cast<int>(p_Size.height), SDL_WINDOW_VULKAN | p_Flags);
 	if (!m_Window)
+	{
 		throw std::runtime_error("Failed to create SDL window: " + std::string(SDL_GetError()));
+	}
 }
 
 void Window::destroy(const VkInstance p_Instance)
@@ -59,14 +63,16 @@ void Window::pollEvents()
 				int32_t l_PxW = 0, l_PxH = 0;
 				SDL_GetWindowSizeInPixels(m_Window, &l_PxW, &l_PxH);
 				if (l_PxW > 0 && l_PxH > 0)
-					m_OnPixelResize.emit({.width = static_cast<uint32_t>(l_PxW), .height = static_cast<uint32_t>(l_PxH) });
+				{
+					m_OnPixelResize.emit({ .width = static_cast<uint32_t>(l_PxW), .height = static_cast<uint32_t>(l_PxH) });
+				}
 			}
 			break;
 		case SDL_EVENT_WINDOW_RESIZED:
 			{
 				if (l_Event.window.data1 > 0 && l_Event.window.data2 > 0)
 				{
-					m_OnResize.emit(Size{.width = static_cast<uint32_t>(l_Event.window.data1), .height = static_cast<uint32_t>(l_Event.window.data2) });
+					m_OnResize.emit({ .width = static_cast<uint32_t>(l_Event.window.data1), .height = static_cast<uint32_t>(l_Event.window.data2) });
 					m_IsMinimized = false;
 				}
 			}
@@ -131,7 +137,9 @@ void Window::createSurface(const VkInstance p_Instance)
 {
 	assert(m_Window);
 	if (!SDL_Vulkan_CreateSurface(m_Window, p_Instance, nullptr, &m_Surface))
+	{
 		throw std::runtime_error("Failed to create Vulkan surface with SDL: " + std::string(SDL_GetError()));
+	}
 }
 
 std::span<const char* const> Window::getRequiredInstanceExtensions() const
@@ -140,7 +148,9 @@ std::span<const char* const> Window::getRequiredInstanceExtensions() const
 	uint32_t l_ExtensionCount;
 	const char* const* l_Exts = SDL_Vulkan_GetInstanceExtensions(&l_ExtensionCount);
 	if (!l_Exts)
+	{
 		throw std::runtime_error("Failed to get required Vulkan extensions from SDL: " + std::string(SDL_GetError()));
+	}
 	return std::span{ l_Exts, l_ExtensionCount };
 }
 
