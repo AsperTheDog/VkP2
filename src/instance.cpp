@@ -91,7 +91,7 @@ namespace vkp
 		return *this;
 	}
 
-	InstanceBuilder& InstanceBuilder::addExtensions(std::span<const char* const> p_Extensions)
+	InstanceBuilder& InstanceBuilder::addExtensions(const std::span<const char* const> p_Extensions)
 	{
 		for (const char* l_Extension : p_Extensions)
 		{

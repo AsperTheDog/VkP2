@@ -2,6 +2,7 @@
 #include <cassert>
 #include <optional>
 #include <vector>
+#include <vk_mem_alloc.h>
 #include <volk.h>
 
 #include "base.hpp"
@@ -12,6 +13,10 @@ namespace vkp::device {
 		VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
         VkDevice device = VK_NULL_HANDLE;
 		VolkDeviceTable deviceTable;
+		VmaAllocator allocator = VK_NULL_HANDLE;
+
+		[[nodiscard]] VolkDeviceTable* operator->() noexcept { return &deviceTable; }
+		[[nodiscard]] const VolkDeviceTable* operator->() const noexcept { return &deviceTable; }
     };
 
     struct QueueInfo {
@@ -261,6 +266,8 @@ namespace vkp::device {
 			p_Context.features12.timelineSemaphore = VK_TRUE;
 			p_Context.features12.bufferDeviceAddress = VK_TRUE;
 			p_Context.features12.descriptorIndexing = VK_TRUE;
+			p_Context.features12.descriptorBindingPartiallyBound = VK_TRUE;
+			p_Context.features12.descriptorBindingVariableDescriptorCount = VK_TRUE;
         }
     };
 
@@ -410,13 +417,71 @@ namespace vkp::device {
         }
     };
 
+    struct ExtendedDynamicState
+    {
+        bool supported = false;
+        VkPhysicalDeviceExtendedDynamicStateFeaturesEXT features{};
+
+        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, ExtendedDynamicState* p_State)
+        {
+            p_State->features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
+            VkPhysicalDeviceFeatures2 l_Features2{};
+            l_Features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+            l_Features2.pNext = &p_State->features;
+            vkGetPhysicalDeviceFeatures2(p_Device, &l_Features2);
+            p_State->supported = p_State->features.extendedDynamicState == VK_TRUE;
+            return 1;
+        }
+
+        static void activate(DeviceActivationContext& p_Context, ExtendedDynamicState* p_State)
+        {
+            if (!p_State->supported)
+            {
+                return;
+            }
+            p_Context.extensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
+            p_State->features.extendedDynamicState = VK_TRUE;
+            p_Context.pNextAdd(&p_State->features);
+        }
+    };
+
+    struct ExtendedDynamicState2
+    {
+        bool supported = false;
+        VkPhysicalDeviceExtendedDynamicState2FeaturesEXT features{};
+
+        static uint32_t evaluate(const VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, ExtendedDynamicState2* p_State)
+        {
+            p_State->features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT;
+            VkPhysicalDeviceFeatures2 l_Features2{};
+            l_Features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+            l_Features2.pNext = &p_State->features;
+            vkGetPhysicalDeviceFeatures2(p_Device, &l_Features2);
+            p_State->supported = p_State->features.extendedDynamicState2 == VK_TRUE;
+            return 1;
+        }
+
+        static void activate(DeviceActivationContext& p_Context, ExtendedDynamicState2* p_State)
+        {
+            if (!p_State->supported)
+            {
+                return;
+            }
+            p_Context.extensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME);
+            p_State->features.extendedDynamicState2 = VK_TRUE;
+            p_Context.pNextAdd(&p_State->features);
+        }
+    };
+
     template<bool IncludeRender = true>
     auto LeanModern(const uint64_t p_MinimalRam = 0)
     {
         auto baseGroup = std::make_tuple(
             BasicProperties{ .minimalRam = p_MinimalRam, .minVkVersion = VK_API_VERSION_1_3 },
             LeanVulkan<IncludeRender>{},
-            UberQueueFamily{ true }
+            UberQueueFamily{ true },
+            ExtendedDynamicState{},
+            ExtendedDynamicState2{}
         );
 
         auto renderGroup = []{
@@ -473,5 +538,52 @@ namespace vkp::device {
 		l_Return.device = l_Context.build(p_Device);
         l_Return.queues.insert(l_Return.queues.end(), l_Context.queuesToCreate.begin(), l_Context.queuesToCreate.end());
 		return l_Return;
+	}
+
+	inline VmaAllocator createVmaAllocator(const VkInstance p_Instance, const DeviceData& p_DeviceData)
+	{
+		const VolkDeviceTable& l_DeviceTable = p_DeviceData.deviceTable;
+        VmaVulkanFunctions l_VulkanFunctions{
+            .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
+            .vkGetDeviceProcAddr = vkGetDeviceProcAddr,
+            .vkGetPhysicalDeviceProperties = vkGetPhysicalDeviceProperties,
+            .vkGetPhysicalDeviceMemoryProperties = vkGetPhysicalDeviceMemoryProperties,
+            .vkAllocateMemory = l_DeviceTable.vkAllocateMemory,
+            .vkFreeMemory = l_DeviceTable.vkFreeMemory,
+            .vkMapMemory = l_DeviceTable.vkMapMemory,
+            .vkUnmapMemory = l_DeviceTable.vkUnmapMemory,
+            .vkFlushMappedMemoryRanges = l_DeviceTable.vkFlushMappedMemoryRanges,
+            .vkInvalidateMappedMemoryRanges = l_DeviceTable.vkInvalidateMappedMemoryRanges,
+            .vkBindBufferMemory = l_DeviceTable.vkBindBufferMemory,
+            .vkBindImageMemory = l_DeviceTable.vkBindImageMemory,
+            .vkGetBufferMemoryRequirements = l_DeviceTable.vkGetBufferMemoryRequirements,
+            .vkGetImageMemoryRequirements = l_DeviceTable.vkGetImageMemoryRequirements,
+            .vkCreateBuffer = l_DeviceTable.vkCreateBuffer,
+            .vkDestroyBuffer = l_DeviceTable.vkDestroyBuffer,
+            .vkCreateImage = l_DeviceTable.vkCreateImage,
+            .vkDestroyImage = l_DeviceTable.vkDestroyImage,
+            .vkCmdCopyBuffer = l_DeviceTable.vkCmdCopyBuffer,
+            .vkGetBufferMemoryRequirements2KHR = l_DeviceTable.vkGetBufferMemoryRequirements2,
+            .vkGetImageMemoryRequirements2KHR = l_DeviceTable.vkGetImageMemoryRequirements2,
+            .vkBindBufferMemory2KHR = l_DeviceTable.vkBindBufferMemory2,
+            .vkBindImageMemory2KHR = l_DeviceTable.vkBindImageMemory2,
+            .vkGetPhysicalDeviceMemoryProperties2KHR = vkGetPhysicalDeviceMemoryProperties2,
+            .vkGetDeviceBufferMemoryRequirements = l_DeviceTable.vkGetDeviceBufferMemoryRequirements,
+            .vkGetDeviceImageMemoryRequirements = l_DeviceTable.vkGetDeviceImageMemoryRequirements,
+#ifdef VK_KHR_external_memory_win32
+            .vkGetMemoryWin32HandleKHR = l_DeviceTable.vkGetMemoryWin32HandleKHR,
+#endif
+        };
+        const VmaAllocatorCreateInfo l_AllocatorCreateInfo{
+	        .physicalDevice = p_DeviceData.physicalDevice,
+	        .device = p_DeviceData.device,
+            .pVulkanFunctions = &l_VulkanFunctions,
+	        .instance = p_Instance,
+	        .vulkanApiVersion = VK_API_VERSION_1_3,
+        };
+        
+        VmaAllocator l_Allocator;
+		VULKAN_TRY(vmaCreateAllocator(&l_AllocatorCreateInfo, &l_Allocator));
+        return l_Allocator;
 	}
 }

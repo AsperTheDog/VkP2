@@ -38,6 +38,7 @@ file(GLOB_RECURSE VkP2_SOURCES CONFIGURE_DEPENDS
     "src/*.cpp"
     "src/*.hpp"
     "include/*.hpp"
+    "include/*.inl"
 )
 
 add_library(VkP2 STATIC ${VkP2_SOURCES})
