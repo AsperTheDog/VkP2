@@ -16,6 +16,7 @@ namespace vkp
         VkExtent2D extent{};
         uint32_t framesInFlight;
         VkPresentModeKHR presentMode;
+		uint32_t minImageCount = 0;
     };
 
 	struct Swapchain

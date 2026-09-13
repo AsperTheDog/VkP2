@@ -382,6 +382,7 @@ namespace vkp::cmd
         {
             transitionImage(p_DeviceData, p_Cb, l_Color.image, kColorLayout, l_Color.finalLayout, VK_IMAGE_ASPECT_COLOR_BIT, Mode);
         }
+
         if (p_Spec.depth)
         {
             transitionImage(p_DeviceData, p_Cb, p_Spec.depth->image, kDepthLayout, p_Spec.depth->finalLayout, VK_IMAGE_ASPECT_DEPTH_BIT, Mode);

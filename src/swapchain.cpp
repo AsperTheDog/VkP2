@@ -161,6 +161,7 @@ namespace vkp
 	        l_ImageCount = std::min(l_ImageCount, l_Capabilities.maxImageCount);
         }
         l_Properties.framesInFlight = l_ImageCount - 1;
+        l_Properties.minImageCount = l_Capabilities.minImageCount;
 
         return l_Properties;
     }
