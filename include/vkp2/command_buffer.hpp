@@ -60,6 +60,15 @@ namespace vkp::cmd
         VkSemaphore signalSemaphore;
     };
 
+    struct SubresourceRangeSpec
+    {
+        uint32_t baseMipLevel = 0;
+        uint32_t levelCount = 1;
+        uint32_t baseArrayLayer = 0;
+        uint32_t layerCount = 1;
+        VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    };
+
     struct AttachmentSpec
     {
         VkImageView view;
@@ -67,14 +76,24 @@ namespace vkp::cmd
         VkImageLayout initialLayout;
         VkImageLayout finalLayout;
         VkAttachmentLoadOp loadOp;
-        VkClearValue clearValue;
+        VkAttachmentStoreOp storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        VkClearValue clearValue{};
+
+        SubresourceRangeSpec range{};
+
+        VkImageView resolveView = VK_NULL_HANDLE;
+        VkResolveModeFlagBits resolveMode = VK_RESOLVE_MODE_NONE;
+        VkImageLayout resolveFinalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     };
 
     struct FrameSpec
     {
-        std::span<const AttachmentSpec> colors;
+        std::span<const AttachmentSpec> colors{};
         const AttachmentSpec* depth = nullptr;
         VkExtent2D extent{};
+
+        uint32_t layerCount = 1;
+        uint32_t viewMask = 0;
     };
 
     struct SemaphoreSubmit

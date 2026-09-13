@@ -19,6 +19,7 @@ namespace vkp::cmd
 		std::forward<F>(p_Lambda)(p_Cb);
         p_DeviceData.deviceTable.vkEndCommandBuffer(p_Cb);
     }
+
     template<bool AutoViewport = true, typename F> requires std::invocable<F, VkCommandBuffer>
     VKP_FORCEINLINE void renderScope(device::DeviceData& p_DeviceData, VkCommandBuffer p_Cb, const VkRenderingInfo& p_RenderInfo, F&& p_Lambda)
 	{
@@ -44,6 +45,7 @@ namespace vkp::cmd
 
         p_DeviceData.deviceTable.vkCmdEndRendering(p_Cb);
     }
+
     template<typename F> requires std::invocable<F, VkCommandBuffer>
     VKP_FORCEINLINE void debugScope(VkCommandBuffer p_Cb, const char* p_Name, const float p_Color[4], F&& p_Lambda)
     {
@@ -58,6 +60,7 @@ namespace vkp::cmd
         std::forward<F>(p_Lambda)(p_Cb);
         vkCmdEndDebugUtilsLabelEXT(p_Cb);
     }
+
     template<typename F> requires std::invocable<F, VkCommandBuffer>
     void immediateSubmitScope(device::DeviceData& p_DeviceData, const VkDevice p_Device, const VkCommandPool p_Pool, const VkQueue p_Queue, F&& p_Lambda, const VkFence p_UserFence = VK_NULL_HANDLE)
     {
@@ -102,6 +105,7 @@ namespace vkp::cmd
             p_DeviceData.deviceTable.vkDestroyFence(p_Device, l_Fence, nullptr);
         }
     }
+
     template<typename F> requires std::invocable<F, VkCommandBuffer>
     VKP_FORCEINLINE void timestampScope(device::DeviceData& p_DeviceData, VkCommandBuffer p_Cb, const VkQueryPool p_Pool, const uint32_t p_StartQueryIdx, const VkPipelineStageFlagBits p_Stage, F&& p_Lambda)
     {
@@ -109,10 +113,12 @@ namespace vkp::cmd
         std::forward<F>(p_Lambda)(p_Cb);
         p_DeviceData.deviceTable.vkCmdWriteTimestamp(p_Cb, p_Stage, p_Pool, p_StartQueryIdx + 1);
     }
+
     VKP_FORCEINLINE void pushConstants(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkPipelineLayout p_Layout, const VkShaderStageFlags p_StageFlags, const uint32_t p_Offset, const uint32_t p_Size, const void* p_Values)
     {
         p_DeviceData.deviceTable.vkCmdPushConstants(p_Cb, p_Layout, p_StageFlags, p_Offset, p_Size, p_Values);
     }
+
 	namespace detail
 	{
         inline StageAccess2 srcStageAccess2(const VkImageLayout p_Layout)
@@ -136,6 +142,7 @@ namespace vkp::cmd
                 return { .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT };
             }
         }
+
         inline StageAccess2 dstStageAccess2(const VkImageLayout p_Layout)
         {
             switch (p_Layout)
@@ -159,6 +166,7 @@ namespace vkp::cmd
                 return { .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT };
             }
         }
+
         inline StageAccess srcStageAccess(const VkImageLayout p_Layout)
         {
             switch (p_Layout)
@@ -180,6 +188,7 @@ namespace vkp::cmd
                 return { .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT };
             }
         }
+
         inline StageAccess dstStageAccess(const VkImageLayout p_Layout)
         {
             switch (p_Layout)
@@ -204,6 +213,7 @@ namespace vkp::cmd
             }
         }
 	}
+
     VKP_FORCEINLINE void transitionImage(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkImage p_Image, const VkImageLayout p_InitialLayout, const VkImageLayout p_FinalLayout, const VkImageAspectFlags p_Aspect = VK_IMAGE_ASPECT_COLOR_BIT, const SyncMode p_Mode = SyncMode::Sync2)
     {
         const VkImageSubresourceRange l_Range{
@@ -264,6 +274,7 @@ namespace vkp::cmd
             p_DeviceData.deviceTable.vkCmdPipelineBarrier(p_Cb, l_Src.stage, l_Dst.stage, 0, 0, nullptr, 0, nullptr, 1, &l_Barrier);
         }
     }
+
     VKP_FORCEINLINE void submit2(const device::DeviceData& p_DeviceData, const VkQueue p_Queue, const Submit2Info& p_Info, const VkFence p_Fence)
     {
         VkSemaphoreSubmitInfo l_Wait{
@@ -301,6 +312,7 @@ namespace vkp::cmd
         };
         VULKAN_TRY(p_DeviceData.deviceTable.vkQueueSubmit2(p_Queue, 1, &l_Submit, p_Fence));
     }
+
     template<SyncMode Mode = SyncMode::Sync2, typename F> requires std::invocable<F, VkCommandBuffer>
     void frameRenderScope(device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const FrameSpec& p_Spec, F&& p_Lambda)
     {
@@ -310,10 +322,6 @@ namespace vkp::cmd
         for (const AttachmentSpec& l_Color : p_Spec.colors)
         {
             transitionImage(p_DeviceData, p_Cb, l_Color.image, l_Color.initialLayout, kColorLayout, VK_IMAGE_ASPECT_COLOR_BIT, Mode);
-        }
-        if (p_Spec.depth)
-        {
-            transitionImage(p_DeviceData, p_Cb, p_Spec.depth->image, p_Spec.depth->initialLayout, kDepthLayout, VK_IMAGE_ASPECT_DEPTH_BIT, Mode);
         }
 
         std::array<VkRenderingAttachmentInfo, 8> l_ColorInfos{};
@@ -325,15 +333,19 @@ namespace vkp::cmd
                 .pNext = nullptr,
                 .imageView = l_Color.view,
                 .imageLayout = kColorLayout,
-                .resolveMode = VK_RESOLVE_MODE_NONE,
-                .resolveImageView = VK_NULL_HANDLE,
-                .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .resolveMode = l_Color.resolveMode,
+                .resolveImageView = l_Color.resolveView,
+                .resolveImageLayout = l_Color.resolveFinalLayout,
                 .loadOp = l_Color.loadOp,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                .storeOp = l_Color.storeOp,
                 .clearValue = l_Color.clearValue,
             };
         }
 
+        if (p_Spec.depth)
+        {
+            transitionImage(p_DeviceData, p_Cb, p_Spec.depth->image, p_Spec.depth->initialLayout, kDepthLayout, VK_IMAGE_ASPECT_DEPTH_BIT, Mode);
+        }
         std::optional<VkRenderingAttachmentInfo> l_DepthInfo;
         if (p_Spec.depth)
         {
@@ -342,9 +354,9 @@ namespace vkp::cmd
                 .pNext = nullptr,
                 .imageView = p_Spec.depth->view,
                 .imageLayout = kDepthLayout,
-                .resolveMode = VK_RESOLVE_MODE_NONE,
-                .resolveImageView = VK_NULL_HANDLE,
-                .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .resolveMode = p_Spec.depth->resolveMode,
+                .resolveImageView = p_Spec.depth->resolveView,
+                .resolveImageLayout = p_Spec.depth->resolveFinalLayout,
                 .loadOp = p_Spec.depth->loadOp,
                 .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
                 .clearValue = p_Spec.depth->clearValue,
@@ -356,8 +368,8 @@ namespace vkp::cmd
             .pNext = nullptr,
             .flags = 0,
             .renderArea = VkRect2D{ .offset = { .x = 0, .y = 0 }, .extent = p_Spec.extent },
-            .layerCount = 1,
-            .viewMask = 0,
+            .layerCount = p_Spec.layerCount,
+            .viewMask = p_Spec.viewMask,
             .colorAttachmentCount = static_cast<uint32_t>(p_Spec.colors.size()),
             .pColorAttachments = l_ColorInfos.data(),
             .pDepthAttachment = p_Spec.depth ? &*l_DepthInfo : nullptr,
