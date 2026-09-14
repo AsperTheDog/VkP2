@@ -13,11 +13,6 @@ namespace vkp
 	{
 		properties.extent = p_Extent;
         properties.presentMode = p_PresentMode;
-
-		for (uint32_t i = 0; i < properties.framesInFlight + 1; i++)
-		{
-			renderFinishedSemaphores.push_back(createSemaphore(p_DeviceData.device));
-		}
 	}
 
 	void Swapchain::recreate(const device::DeviceData& p_DeviceData, const VkSurfaceKHR p_Surface, const VkExtent2D p_NewExtent)
@@ -65,6 +60,20 @@ namespace vkp
 
         uint32_t l_ImageCount;
         VULKAN_TRY(p_DeviceData.deviceTable.vkGetSwapchainImagesKHR(p_DeviceData.device, swapchain, &l_ImageCount, nullptr));
+
+        for (const VkSemaphore& l_Semaphore : renderFinishedSemaphores)
+        {
+            if (l_Semaphore != VK_NULL_HANDLE)
+            {
+                p_DeviceData.deviceTable.vkDestroySemaphore(p_DeviceData.device, l_Semaphore, nullptr);
+            }
+        }
+        renderFinishedSemaphores.clear();
+        renderFinishedSemaphores.reserve(l_ImageCount);
+        for (uint32_t l_Index = 0; l_Index < l_ImageCount; l_Index++)
+        {
+            renderFinishedSemaphores.push_back(createSemaphore(p_DeviceData.device));
+        }
 
         properties.extent = p_NewExtent;
 
