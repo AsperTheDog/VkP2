@@ -232,10 +232,11 @@ namespace vkp
 		cmd::immediateSubmitScope(p_DeviceData, p_DeviceData.device, p_Pool, p_Queue, [&](const VkCommandBuffer p_Cb)
 		{
 			cmd::BasicBarrierBuilder<0, 0, 1>{}
-				.image(p_Image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-					VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE,
-					VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)
-				.record(p_DeviceData, p_Cb);
+				.image(p_Image, {
+					.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,		  .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					.srcStage = VK_PIPELINE_STAGE_2_NONE,		  .srcAccess = VK_ACCESS_2_NONE,
+					.dstStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .dstAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT
+				}).record(p_DeviceData, p_Cb);
 
 			const VkBufferImageCopy l_Region{
 				.bufferOffset = 0,
@@ -248,10 +249,11 @@ namespace vkp
 			p_DeviceData.deviceTable.vkCmdCopyBufferToImage(p_Cb, l_Staging.buffer, p_Image.data.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &l_Region);
 
 			cmd::BasicBarrierBuilder<0, 0, 1>{}
-				.image(p_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, p_FinalLayout,
-					VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-					VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT)
-				.record(p_DeviceData, p_Cb);
+				.image(p_Image, {
+					.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .newLayout = p_FinalLayout,
+					.srcStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,	   .srcAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+					.dstStage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,  .dstAccess = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT
+				}).record(p_DeviceData, p_Cb);
 		});
 
 		destroyBuffer(p_DeviceData, l_Staging);

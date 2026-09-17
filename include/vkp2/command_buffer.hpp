@@ -92,6 +92,8 @@ namespace vkp::cmd
     public:
         struct ImageBarrierData
         {
+            VkImageLayout oldLayout;
+            VkImageLayout newLayout;
             VkPipelineStageFlags2 srcStage;
             VkAccessFlags2 srcAccess;
             VkPipelineStageFlags2 dstStage;
@@ -106,9 +108,9 @@ namespace vkp::cmd
 
         BarrierBuilder& memory(VkPipelineStageFlags2 p_SrcStage, VkAccessFlags2 p_SrcAccess, VkPipelineStageFlags2 p_DstStage, VkAccessFlags2 p_DstAccess);
         BarrierBuilder& buffer(VkBuffer p_Buffer, VkDeviceSize p_Offset, VkDeviceSize p_Size, VkPipelineStageFlags2 p_SrcStage, VkAccessFlags2 p_SrcAccess, VkPipelineStageFlags2 p_DstStage, VkAccessFlags2 p_DstAccess, uint32_t p_SrcQueueFamily = VK_QUEUE_FAMILY_IGNORED, uint32_t p_DstQueueFamily = VK_QUEUE_FAMILY_IGNORED);
-        BarrierBuilder& image(VkImage p_Image, const VkImageSubresourceRange& p_Range, ImageBarrierData p_ImageData);
-        BarrierBuilder& image(VkImage p_Image, const ImageProperties& p_Properties, ImageBarrierData p_ImageData);
-        BarrierBuilder& image(const Image& p_Image, ImageBarrierData p_ImageData);
+        BarrierBuilder& image(VkImage p_Image, const VkImageSubresourceRange& p_Range, const ImageBarrierData& p_ImageData);
+        BarrierBuilder& image(VkImage p_Image, const ImageProperties& p_Properties, const ImageBarrierData& p_ImageData);
+        BarrierBuilder& image(const Image& p_Image, const ImageBarrierData& p_ImageData);
 
         BarrierBuilder& setDependencyFlags(VkDependencyFlags p_Flags);
         BarrierBuilder& clear();
