@@ -583,12 +583,21 @@ namespace vkp::pipeline
 			return;
 		}
 
+		/// Locations run across the whole entry point, while offsets restart for each parameter: parameters declare
+		/// separate vertex buffers, so each one interleaves from byte zero and takes the next binding number.
 		struct Cursor
 		{
 			uint32_t location = 0;
 			uint32_t offset = 0;
+			uint32_t binding = 0;
 
-			void advance(const uint32_t p_Size)
+			[[nodiscard]] uint32_t align(const uint32_t p_Alignment) noexcept
+			{
+				offset = (offset + p_Alignment - 1u) & ~(p_Alignment - 1u);
+				return offset;
+			}
+
+			void advance(const uint32_t p_Size) noexcept
 			{
 				offset = (offset + 3u) & ~3u;
 				offset += p_Size;
@@ -605,8 +614,8 @@ namespace vkp::pipeline
 			case K::Scalar:
 			{
 				const detail::AttributeFormat l_Fmt = detail::attributeFormatFor(p_Type->getScalarType(), 1);
-				l_Cursor.offset = (l_Cursor.offset + l_Fmt.alignment - 1u) & ~(l_Fmt.alignment - 1u);
-				m_VertexAttributes.push_back({ .location = l_Cursor.location, .binding = 0, .format = l_Fmt.format, .offset = l_Cursor.offset });
+				l_Cursor.align(l_Fmt.alignment);
+				m_VertexAttributes.push_back({ .location = l_Cursor.location, .binding = l_Cursor.binding, .format = l_Fmt.format, .offset = l_Cursor.offset });
 				++l_Cursor.location;
 				l_Cursor.advance(l_Fmt.size);
 				break;
@@ -614,8 +623,8 @@ namespace vkp::pipeline
 			case K::Vector:
 			{
 				const detail::AttributeFormat l_Fmt = detail::attributeFormatFor(p_Type->getScalarType(), static_cast<uint32_t>(p_Type->getElementCount()));
-				l_Cursor.offset = (l_Cursor.offset + l_Fmt.alignment - 1u) & ~(l_Fmt.alignment - 1u);
-				m_VertexAttributes.push_back({ .location = l_Cursor.location, .binding = 0, .format = l_Fmt.format, .offset = l_Cursor.offset });
+				l_Cursor.align(l_Fmt.alignment);
+				m_VertexAttributes.push_back({ .location = l_Cursor.location, .binding = l_Cursor.binding, .format = l_Fmt.format, .offset = l_Cursor.offset });
 				++l_Cursor.location;
 				l_Cursor.advance(l_Fmt.size);
 				break;
@@ -625,8 +634,8 @@ namespace vkp::pipeline
 				const detail::AttributeFormat l_Fmt = detail::attributeFormatFor(p_Type->getScalarType(), p_Type->getRowCount());
 				for (uint32_t c = 0; c < p_Type->getColumnCount(); ++c)
 				{
-					l_Cursor.offset = (l_Cursor.offset + l_Fmt.alignment - 1u) & ~(l_Fmt.alignment - 1u);
-					m_VertexAttributes.push_back({ .location = l_Cursor.location, .binding = 0, .format = l_Fmt.format, .offset = l_Cursor.offset });
+					l_Cursor.align(l_Fmt.alignment);
+					m_VertexAttributes.push_back({ .location = l_Cursor.location, .binding = l_Cursor.binding, .format = l_Fmt.format, .offset = l_Cursor.offset });
 					++l_Cursor.location;
 					l_Cursor.advance(l_Fmt.size);
 				}
@@ -666,10 +675,14 @@ namespace vkp::pipeline
 			{
 				continue;
 			}
-			l_EmitType(l_EmitType, l_Parameter->getTypeLayout()->getType());
-		}
 
-		m_VertexBindings.push_back({ .binding = 0, .stride = (l_Cursor.offset + 3u) & ~3u, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX });
+			// every parameter is a buffer of its own, so its fields interleave from offset zero
+			l_Cursor.offset = 0;
+			l_EmitType(l_EmitType, l_Parameter->getTypeLayout()->getType());
+
+			m_VertexBindings.push_back({ .binding = l_Cursor.binding, .stride = (l_Cursor.offset + 3u) & ~3u, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX });
+			++l_Cursor.binding;
+		}
 	}
 
 	template<StoragePolicy TStorage>

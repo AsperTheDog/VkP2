@@ -24,7 +24,7 @@ namespace vkp::pipeline
 		uint32_t descriptorSetLayouts = 0;      // addDescriptorSetLayout calls, or layouts reflected from the shader
 		uint32_t descriptorBindings = 0;        // bindings inside a reflected layout, and their flags
 		uint32_t pushConstantRanges = 0;        // addPushConstantRange calls, or ranges reflected from the shader
-		uint32_t vertexBindings = 0;            // setVertexInput bindings, or the single binding generated from reflection
+		uint32_t vertexBindings = 0;            // setVertexInput bindings, or one per vertex input parameter reflected from the shader
 		uint32_t vertexAttributes = 0;          // setVertexInput attributes, or attributes reflected from the shader
 		uint32_t dynamicStates = 0;             // addDynamicState calls; the builder seeds viewport and scissor, so at least 2
 		uint32_t specializationEntries = 0;     // entries in one addShaderStage specialization map
