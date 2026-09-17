@@ -4,14 +4,15 @@
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
+#include <vector>
 
+#include "desc.hpp"
 #include "shader.hpp"
 
 namespace vkp::pipeline
 {
-	namespace
+	namespace detail
 	{
-		constexpr SlangInt kUnboundedThreshold = 1 << 24;
 
 		struct AttributeFormat
 		{
@@ -20,7 +21,7 @@ namespace vkp::pipeline
 			uint32_t alignment;
 		};
 
-		AttributeFormat attributeFormatFor(const slang::TypeReflection::ScalarType p_Scalar, const uint32_t p_Extent)
+		inline AttributeFormat attributeFormatFor(const slang::TypeReflection::ScalarType p_Scalar, const uint32_t p_Extent)
 		{
 			using S = slang::TypeReflection::ScalarType;
 			const VkFormat l_Format = [p_Scalar, p_Extent]() -> VkFormat
@@ -129,57 +130,27 @@ namespace vkp::pipeline
 			return { .format = l_Format, .size = l_ComponentBytes * p_Extent, .alignment = l_ComponentBytes > 4 ? 8u : 4u };
 		}
 
-		VkDescriptorType toDescriptorType(const slang::BindingType p_Type)
-		{
-			using B = slang::BindingType;
-			const bool l_Mutable = (static_cast<uint32_t>(p_Type) & static_cast<uint32_t>(B::MutableFlag)) != 0;
-			switch (static_cast<uint32_t>(p_Type) & static_cast<uint32_t>(B::BaseMask))
-			{
-			case static_cast<uint32_t>(B::Sampler): return VK_DESCRIPTOR_TYPE_SAMPLER;
-			case static_cast<uint32_t>(B::Texture): return l_Mutable ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-			case static_cast<uint32_t>(B::CombinedTextureSampler): return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			case static_cast<uint32_t>(B::ConstantBuffer):
-			case static_cast<uint32_t>(B::ParameterBlock): return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			case static_cast<uint32_t>(B::TypedBuffer): return l_Mutable ? VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
-			case static_cast<uint32_t>(B::RawBuffer): return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-			case static_cast<uint32_t>(B::RayTracingAccelerationStructure): return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-			default: throw std::runtime_error("vkp::pipeline: unsupported reflection binding type");
-			}
-		}
 
-		bool isNonDescriptorType(const slang::BindingType p_Type)
-		{
-			switch (p_Type)
-			{
-			case slang::BindingType::Unknown:
-			case slang::BindingType::VaryingInput:
-			case slang::BindingType::VaryingOutput:
-			case slang::BindingType::ExistentialValue:
-			case slang::BindingType::PushConstant:
-				return true;
-			default:
-				return false;
-			}
-		}
 
-		bool isSystemSemantic(const char* p_Semantic)
+		inline bool isSystemSemantic(const char* p_Semantic)
 		{
 			return p_Semantic && std::string_view(p_Semantic).starts_with("SV_");
 		}
 
-		template<typename Allocator = std::allocator<void>>
-		Vec<Allocator, VkPushConstantRange, 4> reflectedPushConstantRanges(slang::ProgramLayout* p_Program, const VkShaderStageFlags p_Stages, const Allocator& p_Allocator = Allocator())
+		template<Sequence TContainer>
+		void reflectedPushConstantRanges(TContainer& p_Ranges, slang::ProgramLayout* p_Program, const VkShaderStageFlags p_Stages)
 		{
-			Vec<Allocator, VkPushConstantRange, 4> l_Ranges(p_Allocator);
+			p_Ranges.clear();
+			TContainer& l_Ranges = p_Ranges;
 			slang::VariableLayoutReflection* l_Global = p_Program->getGlobalParamsVarLayout();
 			if (!l_Global)
 			{
-				return l_Ranges;
+				return;
 			}
 			slang::TypeLayoutReflection* l_GlobalLayout = l_Global->getTypeLayout();
 			if (!l_GlobalLayout)
 			{
-				return l_Ranges;
+				return;
 			}
 			for (SlangInt i = 0; i < l_GlobalLayout->getBindingRangeCount(); ++i)
 			{
@@ -196,10 +167,9 @@ namespace vkp::pipeline
 				}
 				l_Ranges.push_back({ .stageFlags = p_Stages, .offset = 0, .size = static_cast<uint32_t>(l_Size) });
 			}
-			return l_Ranges;
 		}
 
-		std::filesystem::path pipelineCachePath(const device::DeviceData& p_DeviceData, const std::filesystem::path& p_Folder)
+		inline std::filesystem::path pipelineCachePath(const device::DeviceData& p_DeviceData, const std::filesystem::path& p_Folder)
 		{
 			VkPhysicalDeviceProperties l_Properties{};
 			vkGetPhysicalDeviceProperties(p_DeviceData.physicalDevice, &l_Properties);
@@ -208,8 +178,7 @@ namespace vkp::pipeline
 			return p_Folder / l_Name;
 		}
 
-		template<typename Allocator = std::allocator<void>>
-		VkPipelineCache loadPipelineCache(const device::DeviceData& p_DeviceData, const std::filesystem::path& p_Folder, const Allocator& p_Allocator = Allocator())
+		inline VkPipelineCache loadPipelineCache(const device::DeviceData& p_DeviceData, const std::filesystem::path& p_Folder)
 		{
 			const std::filesystem::path l_Path = pipelineCachePath(p_DeviceData, p_Folder);
 			if (!std::filesystem::exists(l_Path))
@@ -222,8 +191,7 @@ namespace vkp::pipeline
 			{
 				return VK_NULL_HANDLE;
 			}
-			using ByteAlloc = std::allocator_traits<Allocator>::template rebind_alloc<uint8_t>;
-			std::vector<uint8_t, ByteAlloc> l_Data((std::istreambuf_iterator<char>(l_File)), std::istreambuf_iterator<char>(), ByteAlloc(p_Allocator));
+			std::vector<uint8_t> l_Data((std::istreambuf_iterator<char>(l_File)), std::istreambuf_iterator<char>());
 			if (l_Data.empty())
 			{
 				return VK_NULL_HANDLE;
@@ -241,8 +209,7 @@ namespace vkp::pipeline
 			return l_Cache;
 		}
 
-		template<typename Allocator = std::allocator<void>>
-		void storePipelineCache(const device::DeviceData& p_DeviceData, const std::filesystem::path& p_Folder, const VkPipelineCache p_Cache, const Allocator& p_Allocator = Allocator())
+		inline void storePipelineCache(const device::DeviceData& p_DeviceData, const std::filesystem::path& p_Folder, const VkPipelineCache p_Cache)
 		{
 			if (p_Cache == VK_NULL_HANDLE)
 			{
@@ -254,8 +221,7 @@ namespace vkp::pipeline
 			{
 				return;
 			}
-			using ByteAlloc = std::allocator_traits<Allocator>::template rebind_alloc<uint8_t>;
-			std::vector<uint8_t, ByteAlloc> l_Data(l_Size, 0, ByteAlloc(p_Allocator));
+			std::vector<uint8_t> l_Data(l_Size, 0);
 			VULKAN_TRY(p_DeviceData.deviceTable.vkGetPipelineCacheData(p_DeviceData.device, p_Cache, &l_Size, l_Data.data()));
 
 			const std::filesystem::path l_Path = pipelineCachePath(p_DeviceData, p_Folder);
@@ -273,16 +239,15 @@ namespace vkp::pipeline
 			l_File.write(reinterpret_cast<const char*>(l_Data.data()), static_cast<std::streamsize>(l_Data.size()));
 		}
 
-		template<typename Allocator = std::allocator<void>>
 		class PipelineCacheGuard
 		{
 		public:
-			PipelineCacheGuard(const device::DeviceData& p_DeviceData, const VkPipelineCache p_Explicit, std::filesystem::path p_Folder, const Allocator& p_Allocator)
-				: m_DeviceData(p_DeviceData), m_Folder(std::move(p_Folder)), m_Cache(p_Explicit), m_Allocator(p_Allocator)
+			PipelineCacheGuard(const device::DeviceData& p_DeviceData, const VkPipelineCache p_Explicit, std::filesystem::path p_Folder)
+				: m_DeviceData(p_DeviceData), m_Folder(std::move(p_Folder)), m_Cache(p_Explicit)
 			{
 				if (m_Cache == VK_NULL_HANDLE && !m_Folder.empty())
 				{
-					m_Cache = loadPipelineCache(m_DeviceData, m_Folder, m_Allocator);
+					m_Cache = loadPipelineCache(m_DeviceData, m_Folder);
 					if (m_Cache == VK_NULL_HANDLE)
 					{
 						constexpr VkPipelineCacheCreateInfo l_CreateInfo{
@@ -302,7 +267,7 @@ namespace vkp::pipeline
 			{
 				if (m_Owned)
 				{
-					storePipelineCache(m_DeviceData, m_Folder, m_Cache, m_Allocator);
+					storePipelineCache(m_DeviceData, m_Folder, m_Cache);
 					if (m_Cache != VK_NULL_HANDLE)
 					{
 						m_DeviceData.deviceTable.vkDestroyPipelineCache(m_DeviceData.device, m_Cache, nullptr);
@@ -319,102 +284,103 @@ namespace vkp::pipeline
 			const device::DeviceData& m_DeviceData;
 			std::filesystem::path m_Folder;
 			VkPipelineCache m_Cache = VK_NULL_HANDLE;
-			Allocator m_Allocator;
 			bool m_Owned = false;
+		};
+
+		template<typename TStorage>
+		struct StaticDescriptorStorage
+		{
+			using Layouts = TStorage::DescriptorSetLayouts;
+			using Bindings = TStorage::DescriptorBindings;
+			using Flags = TStorage::DescriptorBindingFlags;
 		};
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>::BasicPipelineBuilder(const Allocator& p_Allocator)
-		: m_Allocator(p_Allocator),
-		  m_Stages(m_Allocator),
-		  m_DescriptorSetLayouts(m_Allocator),
-		  m_PushConstantRanges(m_Allocator),
-		  m_ColorFormats(m_Allocator),
-		  m_VertexBindings(m_Allocator),
-		  m_VertexAttributes(m_Allocator),
-		  m_DynamicStates(m_Allocator)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>::BasicPipelineBuilder(typename TStorage::ProtoAllocator p_Allocator)
+		: m_Allocator(std::move(p_Allocator))
+		, m_Stages(makeContainer<typename TStorage::Stages>())
+		, m_DescriptorSetLayouts(makeContainer<typename TStorage::DescriptorSetLayouts>())
+		, m_PushConstantRanges(makeContainer<typename TStorage::PushConstantRanges>())
+		, m_ColorFormats(makeContainer<typename TStorage::ColorFormats>())
+		, m_VertexBindings(makeContainer<typename TStorage::VertexBindings>())
+		, m_VertexAttributes(makeContainer<typename TStorage::VertexAttributes>())
+		, m_DynamicStates(makeContainer<typename TStorage::DynamicStates>())
 	{
 		m_DynamicStates.push_back(VK_DYNAMIC_STATE_VIEWPORT);
 		m_DynamicStates.push_back(VK_DYNAMIC_STATE_SCISSOR);
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::addShaderStage(const VkShaderModule p_Module, const VkShaderStageFlagBits p_Stage, const std::string_view p_EntryPointName)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::addShaderStage(const VkShaderModule p_Module, const VkShaderStageFlagBits p_Stage, const std::string_view p_EntryPointName)
 	{
-		m_Stages.emplace_back(p_Module, p_Stage, std::string(p_EntryPointName), m_Allocator);
+		m_Stages.emplace_back(p_Module, p_Stage, std::string(p_EntryPointName),
+			makeContainer<typename TStorage::SpecializationEntries>(), makeContainer<typename TStorage::SpecializationData>());
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::addShaderStage(const VkShaderModule p_Module, const VkShaderStageFlagBits p_Stage, const std::string_view p_EntryPointName, const std::span<const VkSpecializationMapEntry> p_SpecializationMap, const std::span<const uint8_t> p_SpecializationData)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::addShaderStage(const VkShaderModule p_Module, const VkShaderStageFlagBits p_Stage, const std::string_view p_EntryPointName, const std::span<const VkSpecializationMapEntry> p_SpecializationMap, const std::span<const uint8_t> p_SpecializationData)
 	{
-		Stage& l_Stage = m_Stages.emplace_back(p_Module, p_Stage, std::string(p_EntryPointName), m_Allocator);
+		typename TStorage::Stage& l_Stage = m_Stages.emplace_back(p_Module, p_Stage, std::string(p_EntryPointName),
+			makeContainer<typename TStorage::SpecializationEntries>(), makeContainer<typename TStorage::SpecializationData>());
 		l_Stage.hasSpecialization = true;
 		l_Stage.specializationEntries.assign(p_SpecializationMap.begin(), p_SpecializationMap.end());
 		l_Stage.specializationData.assign(p_SpecializationData.begin(), p_SpecializationData.end());
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::addDescriptorSetLayout(const VkDescriptorSetLayout p_Layout)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::addDescriptorSetLayout(const VkDescriptorSetLayout p_Layout)
 	{
 		m_DescriptorSetLayouts.push_back(p_Layout);
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::addPushConstantRange(const VkPushConstantRange p_Range)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::addPushConstantRange(const VkPushConstantRange p_Range)
 	{
 		m_PushConstantRanges.push_back(p_Range);
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setPipelineLayout(const VkPipelineLayout p_Layout)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setPipelineLayout(const VkPipelineLayout p_Layout)
 	{
 		m_InjectedLayout = p_Layout;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setPipelineCacheFolder(std::filesystem::path p_Folder)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setPipelineCacheFolder(std::filesystem::path p_Folder)
 	{
 		m_CacheFolder = std::move(p_Folder);
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::useReflection(const shader::Shader<true>& p_Shader)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::useReflection(const shader::Shader<true>& p_Shader)
 	{
 		m_Reflection = &p_Shader;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setRenderPass(const VkRenderPass p_RenderPass, const uint32_t p_Subpass)
-	{
-		m_RenderPass = p_RenderPass;
-		m_Subpass = p_Subpass;
-		return *this;
-	}
-
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setColorFormats(const std::span<const VkFormat> p_Formats)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setColorFormats(const std::span<const VkFormat> p_Formats)
 	{
 		m_ColorFormats.assign(p_Formats.begin(), p_Formats.end());
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setDepthFormat(const VkFormat p_Format)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setDepthFormat(const VkFormat p_Format)
 	{
 		m_DepthFormat = p_Format;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setVertexInput(const std::span<const VkVertexInputBindingDescription> p_Bindings, const std::span<const VkVertexInputAttributeDescription> p_Attributes)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setVertexInput(const std::span<const VkVertexInputBindingDescription> p_Bindings, const std::span<const VkVertexInputAttributeDescription> p_Attributes)
 	{
 		m_VertexBindings.assign(p_Bindings.begin(), p_Bindings.end());
 		m_VertexAttributes.assign(p_Attributes.begin(), p_Attributes.end());
@@ -422,47 +388,47 @@ namespace vkp::pipeline
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setTopology(const VkPrimitiveTopology p_Topology)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setTopology(const VkPrimitiveTopology p_Topology)
 	{
 		m_Topology = p_Topology;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setPolygonMode(const VkPolygonMode p_Mode)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setPolygonMode(const VkPolygonMode p_Mode)
 	{
 		m_PolygonMode = p_Mode;
 		m_RasterizationOverride.reset();
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setCullMode(const VkCullModeFlags p_CullMode)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setCullMode(const VkCullModeFlags p_CullMode)
 	{
 		m_CullMode = p_CullMode;
 		m_RasterizationOverride.reset();
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setFrontFace(const VkFrontFace p_FrontFace)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setFrontFace(const VkFrontFace p_FrontFace)
 	{
 		m_FrontFace = p_FrontFace;
 		m_RasterizationOverride.reset();
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setSampleCount(const VkSampleCountFlagBits p_SampleCount)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setSampleCount(const VkSampleCountFlagBits p_SampleCount)
 	{
 		m_SampleCount = p_SampleCount;
 		m_MultisampleOverride.reset();
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setDepthTest(const bool p_Test, const bool p_Write)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setDepthTest(const bool p_Test, const bool p_Write)
 	{
 		m_DepthTest = p_Test;
 		m_DepthWrite = p_Write;
@@ -470,59 +436,59 @@ namespace vkp::pipeline
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setBlending(const bool p_Enable)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setBlending(const bool p_Enable)
 	{
 		m_Blending = p_Enable;
 		m_ColorBlendOverride.reset();
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setDepthStencilState(const VkPipelineDepthStencilStateCreateInfo& p_State)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setDepthStencilState(const VkPipelineDepthStencilStateCreateInfo& p_State)
 	{
 		m_DepthStencilOverride = p_State;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setColorBlendState(const VkPipelineColorBlendStateCreateInfo& p_State)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setColorBlendState(const VkPipelineColorBlendStateCreateInfo& p_State)
 	{
 		m_ColorBlendOverride = p_State;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setMultisampleState(const VkPipelineMultisampleStateCreateInfo& p_State)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setMultisampleState(const VkPipelineMultisampleStateCreateInfo& p_State)
 	{
 		m_MultisampleOverride = p_State;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setRasterizationState(const VkPipelineRasterizationStateCreateInfo& p_State)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setRasterizationState(const VkPipelineRasterizationStateCreateInfo& p_State)
 	{
 		m_RasterizationOverride = p_State;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setPatchControlPoints(const uint32_t p_Count)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setPatchControlPoints(const uint32_t p_Count)
 	{
 		m_PatchControlPoints = p_Count;
 		m_HasPatchControlPoints = true;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setFlags(const VkPipelineCreateFlags p_Flags)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setFlags(const VkPipelineCreateFlags p_Flags)
 	{
 		m_CreateFlags = p_Flags;
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setDynamicDepth(const bool p_Test, const bool p_Write)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setDynamicDepth(const bool p_Test, const bool p_Write)
 	{
 		m_DepthTest = p_Test;
 		m_DepthWrite = p_Write;
@@ -532,37 +498,37 @@ namespace vkp::pipeline
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setDynamicCull()
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setDynamicCull()
 	{
 		addDynamicState(VK_DYNAMIC_STATE_CULL_MODE);
 		addDynamicState(VK_DYNAMIC_STATE_FRONT_FACE);
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setDynamicRasterizerDiscard()
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setDynamicRasterizerDiscard()
 	{
 		addDynamicState(VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE);
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setDynamicDepthBias()
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setDynamicDepthBias()
 	{
 		addDynamicState(VK_DYNAMIC_STATE_DEPTH_BIAS);
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::setDynamicBlendConstants()
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::setDynamicBlendConstants()
 	{
 		addDynamicState(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
 		return *this;
 	}
 
-	template<typename Allocator>
-	BasicPipelineBuilder<Allocator>& BasicPipelineBuilder<Allocator>::addDynamicState(const VkDynamicState p_State)
+	template<StoragePolicy TStorage>
+	BasicPipelineBuilder<TStorage>& BasicPipelineBuilder<TStorage>::addDynamicState(const VkDynamicState p_State)
 	{
 		if (std::ranges::find(m_DynamicStates, p_State) == m_DynamicStates.end())
 		{
@@ -571,126 +537,30 @@ namespace vkp::pipeline
 		return *this;
 	}
 
-	template<typename Allocator>
-	VkShaderStageFlags BasicPipelineBuilder<Allocator>::stageMask() const
+	template<StoragePolicy TStorage>
+	VkShaderStageFlags BasicPipelineBuilder<TStorage>::stageMask() const
 	{
 		VkShaderStageFlags l_Mask = 0;
-		for (const Stage& l_Stage : m_Stages)
+		for (const typename TStorage::Stage& l_Stage : m_Stages)
 		{
 			l_Mask |= l_Stage.stage;
 		}
 		return l_Mask;
 	}
 
-	template<typename Allocator>
-	Vec<Allocator, VkDescriptorSetLayout, 8> BasicPipelineBuilder<Allocator>::createDescriptorSetLayouts(const device::DeviceData& p_DeviceData) const
+	template<StoragePolicy TStorage>
+	TStorage::DescriptorSetLayouts BasicPipelineBuilder<TStorage>::createDescriptorSetLayouts(const device::DeviceData& p_DeviceData) const
 	{
-		if (!m_Reflection)
+		typename TStorage::DescriptorSetLayouts l_Created = makeContainer<typename TStorage::DescriptorSetLayouts>();
+		if (m_Reflection)
 		{
-			return Vec<Allocator, VkDescriptorSetLayout, 8>(m_Allocator);
+			desc::detail::createSetLayouts<desc::detail::Storage<typename TStorage::DescriptorSetLayouts, typename TStorage::DescriptorBindings, typename TStorage::DescriptorBindingFlags>>(p_DeviceData, m_Reflection->layout(), stageMask(), l_Created);
 		}
-
-		slang::ProgramLayout* l_Program = m_Reflection->layout();
-		slang::VariableLayoutReflection* l_Global = l_Program->getGlobalParamsVarLayout();
-		if (!l_Global)
-		{
-			return Vec<Allocator, VkDescriptorSetLayout, 8>(m_Allocator);
-		}
-		slang::TypeLayoutReflection* l_GlobalLayout = l_Global->getTypeLayout();
-		if (!l_GlobalLayout)
-		{
-			return Vec<Allocator, VkDescriptorSetLayout, 8>(m_Allocator);
-		}
-
-		uint32_t l_SetCount = 0;
-		for (SlangInt i = 0; i < l_GlobalLayout->getDescriptorSetCount(); ++i)
-		{
-			l_SetCount = std::max(l_SetCount, static_cast<uint32_t>(l_GlobalLayout->getDescriptorSetSpaceOffset(i)) + 1);
-		}
-
-		Vec<Allocator, VkDescriptorSetLayout, 8> l_Created(m_Allocator);
-		l_Created.resize(l_SetCount, VK_NULL_HANDLE);
-		for (SlangInt i = 0; i < l_GlobalLayout->getDescriptorSetCount(); ++i)
-		{
-			const uint32_t l_Space = static_cast<uint32_t>(l_GlobalLayout->getDescriptorSetSpaceOffset(i));
-			Vec<Allocator, VkDescriptorSetLayoutBinding, 32> l_Bindings(m_Allocator);
-			Vec<Allocator, VkDescriptorBindingFlags, 32> l_Flags(m_Allocator);
-
-			SlangInt l_UnboundedIndex = -1;
-			SlangInt l_UnboundedCount = 0;
-			for (SlangInt r = 0; r < l_GlobalLayout->getDescriptorSetDescriptorRangeCount(i); ++r)
-			{
-				if (isNonDescriptorType(l_GlobalLayout->getDescriptorSetDescriptorRangeType(i, r)))
-				{
-					continue;
-				}
-				const SlangInt l_Count = l_GlobalLayout->getDescriptorSetDescriptorRangeDescriptorCount(i, r);
-				if (l_Count < 0 || l_Count >= kUnboundedThreshold)
-				{
-					++l_UnboundedCount;
-					l_UnboundedIndex = l_GlobalLayout->getDescriptorSetDescriptorRangeIndexOffset(i, r);
-				}
-			}
-			if (l_UnboundedCount > 1 || (l_UnboundedCount == 1 && l_UnboundedIndex != l_GlobalLayout->getDescriptorSetDescriptorRangeIndexOffset(i, l_GlobalLayout->getDescriptorSetDescriptorRangeCount(i) - 1)))
-			{
-				throw std::runtime_error("vkp::pipeline: multiple unbounded descriptor arrays in one set are not supported by Vulkan; place each unbounded array in its own descriptor space");
-			}
-
-			for (SlangInt r = 0; r < l_GlobalLayout->getDescriptorSetDescriptorRangeCount(i); ++r)
-			{
-				const slang::BindingType l_Type = l_GlobalLayout->getDescriptorSetDescriptorRangeType(i, r);
-				if (isNonDescriptorType(l_Type))
-				{
-					continue;
-				}
-				const SlangInt l_Count = l_GlobalLayout->getDescriptorSetDescriptorRangeDescriptorCount(i, r);
-				const bool l_Unbounded = l_Count < 0 || l_Count >= kUnboundedThreshold;
-
-				VkDescriptorSetLayoutBinding l_Binding{};
-				l_Binding.binding = static_cast<uint32_t>(l_GlobalLayout->getDescriptorSetDescriptorRangeIndexOffset(i, r));
-				l_Binding.descriptorType = toDescriptorType(l_Type);
-				l_Binding.descriptorCount = l_Unbounded ? 1u : static_cast<uint32_t>(l_Count);
-				l_Binding.stageFlags = stageMask();
-
-				VkDescriptorBindingFlags l_Flag = 0;
-				if (l_Unbounded || l_Count > 256)
-				{
-					l_Flag |= VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
-				}
-				if (l_Unbounded)
-				{
-					l_Flag |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
-				}
-
-				l_Bindings.push_back(l_Binding);
-				l_Flags.push_back(l_Flag);
-			}
-
-			const VkDescriptorSetLayoutBindingFlagsCreateInfo l_FlagInfo{
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-				.pNext = nullptr,
-				.bindingCount = static_cast<uint32_t>(l_Flags.size()),
-				.pBindingFlags = l_Flags.data(),
-			};
-
-			const VkDescriptorSetLayoutCreateInfo l_CreateInfo{
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.pNext = l_Bindings.empty() ? nullptr : &l_FlagInfo,
-				.flags = 0,
-				.bindingCount = static_cast<uint32_t>(l_Bindings.size()),
-				.pBindings = l_Bindings.data(),
-			};
-
-			VkDescriptorSetLayout l_Layout = VK_NULL_HANDLE;
-			VULKAN_TRY(p_DeviceData.deviceTable.vkCreateDescriptorSetLayout(p_DeviceData.device, &l_CreateInfo, nullptr, &l_Layout));
-			l_Created[l_Space] = l_Layout;
-		}
-
 		return l_Created;
 	}
 
-	template<typename Allocator>
-	void BasicPipelineBuilder<Allocator>::generateVertexInput()
+	template<StoragePolicy TStorage>
+	void BasicPipelineBuilder<TStorage>::generateVertexInput()
 	{
 		if (!m_Reflection)
 		{
@@ -734,7 +604,7 @@ namespace vkp::pipeline
 			{
 			case K::Scalar:
 			{
-				const AttributeFormat l_Fmt = attributeFormatFor(p_Type->getScalarType(), 1);
+				const detail::AttributeFormat l_Fmt = detail::attributeFormatFor(p_Type->getScalarType(), 1);
 				l_Cursor.offset = (l_Cursor.offset + l_Fmt.alignment - 1u) & ~(l_Fmt.alignment - 1u);
 				m_VertexAttributes.push_back({ .location = l_Cursor.location, .binding = 0, .format = l_Fmt.format, .offset = l_Cursor.offset });
 				++l_Cursor.location;
@@ -743,7 +613,7 @@ namespace vkp::pipeline
 			}
 			case K::Vector:
 			{
-				const AttributeFormat l_Fmt = attributeFormatFor(p_Type->getScalarType(), static_cast<uint32_t>(p_Type->getElementCount()));
+				const detail::AttributeFormat l_Fmt = detail::attributeFormatFor(p_Type->getScalarType(), static_cast<uint32_t>(p_Type->getElementCount()));
 				l_Cursor.offset = (l_Cursor.offset + l_Fmt.alignment - 1u) & ~(l_Fmt.alignment - 1u);
 				m_VertexAttributes.push_back({ .location = l_Cursor.location, .binding = 0, .format = l_Fmt.format, .offset = l_Cursor.offset });
 				++l_Cursor.location;
@@ -752,7 +622,7 @@ namespace vkp::pipeline
 			}
 			case K::Matrix:
 			{
-				const AttributeFormat l_Fmt = attributeFormatFor(p_Type->getScalarType(), p_Type->getRowCount());
+				const detail::AttributeFormat l_Fmt = detail::attributeFormatFor(p_Type->getScalarType(), p_Type->getRowCount());
 				for (uint32_t c = 0; c < p_Type->getColumnCount(); ++c)
 				{
 					l_Cursor.offset = (l_Cursor.offset + l_Fmt.alignment - 1u) & ~(l_Fmt.alignment - 1u);
@@ -792,7 +662,7 @@ namespace vkp::pipeline
 		for (uint32_t i = 0; i < l_VertexEntry->getParameterCount(); ++i)
 		{
 			slang::VariableLayoutReflection* l_Parameter = l_VertexEntry->getParameterByIndex(i);
-			if (isSystemSemantic(l_Parameter->getSemanticName()))
+			if (detail::isSystemSemantic(l_Parameter->getSemanticName()))
 			{
 				continue;
 			}
@@ -802,16 +672,16 @@ namespace vkp::pipeline
 		m_VertexBindings.push_back({ .binding = 0, .stride = (l_Cursor.offset + 3u) & ~3u, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX });
 	}
 
-	template<typename Allocator>
-	BasicPipelineData<Allocator> BasicPipelineBuilder<Allocator>::buildGraphics(const device::DeviceData& p_DeviceData, const VkPipelineCache p_PipelineCache)
+	template<StoragePolicy TStorage>
+	BasicPipelineData<TStorage> BasicPipelineBuilder<TStorage>::buildGraphics(const device::DeviceData& p_DeviceData, const VkPipelineCache p_PipelineCache)
 	{
 		if (m_Stages.empty())
 		{
 			throw std::runtime_error("vkp::pipeline: no shader stages");
 		}
-		if (m_RenderPass == VK_NULL_HANDLE && m_ColorFormats.empty())
+		if (m_ColorFormats.empty())
 		{
-			throw std::runtime_error("vkp::pipeline: no color formats or render pass");
+			throw std::runtime_error("vkp::pipeline: no color formats");
 		}
 		if (m_Reflection && !m_DescriptorSetLayouts.empty())
 		{
@@ -820,17 +690,18 @@ namespace vkp::pipeline
 
 		if (!m_HasVertexInput)
 		{
-			const bool l_HasVertexStage = std::ranges::any_of(m_Stages, [](const Stage& p_Stage) { return p_Stage.stage == VK_SHADER_STAGE_VERTEX_BIT; });
+			const bool l_HasVertexStage = std::ranges::any_of(m_Stages, [](const typename TStorage::Stage& p_Stage) { return p_Stage.stage == VK_SHADER_STAGE_VERTEX_BIT; });
 			if (l_HasVertexStage)
 			{
 				generateVertexInput();
 			}
 		}
 
-		Vec<Allocator, VkDescriptorSetLayout, 8> l_CreatedLayouts(m_Allocator);
+		typename TStorage::DescriptorSetLayouts l_CreatedLayouts = makeContainer<typename TStorage::DescriptorSetLayouts>();
 		std::span<const VkDescriptorSetLayout> l_Layouts;
 		VkPipelineLayout l_Layout = VK_NULL_HANDLE;
-		BasicPipelineData<Allocator> l_Out(m_Allocator);
+		BasicPipelineData<TStorage> l_Out;
+		l_Out.ownsLayout = m_InjectedLayout == VK_NULL_HANDLE;
 
 		if (m_InjectedLayout != VK_NULL_HANDLE)
 		{
@@ -848,7 +719,7 @@ namespace vkp::pipeline
 				l_Layouts = m_DescriptorSetLayouts;
 			}
 
-			Vec<Allocator, VkPushConstantRange, 4> l_PushRanges(m_Allocator);
+			typename TStorage::PushConstantRanges l_PushRanges = makeContainer<typename TStorage::PushConstantRanges>();
 			for (const auto& l_Range : m_PushConstantRanges)
 			{
 				l_PushRanges.push_back(l_Range);
@@ -856,11 +727,7 @@ namespace vkp::pipeline
 
 			if (m_Reflection && l_PushRanges.empty())
 			{
-				auto l_ReflectedRanges = reflectedPushConstantRanges(m_Reflection->layout(), stageMask(), m_Allocator);
-				for (const auto& l_Range : l_ReflectedRanges)
-				{
-					l_PushRanges.push_back(l_Range);
-				}
+				detail::reflectedPushConstantRanges(l_PushRanges, m_Reflection->layout(), stageMask());
 			}
 
 			const VkPipelineLayoutCreateInfo l_LayoutInfo{
@@ -875,11 +742,11 @@ namespace vkp::pipeline
 			VULKAN_TRY(p_DeviceData.deviceTable.vkCreatePipelineLayout(p_DeviceData.device, &l_LayoutInfo, nullptr, &l_Layout));
 		}
 
-		Vec<Allocator, VkPipelineShaderStageCreateInfo, 8> l_StageInfos(m_Allocator);
+		typename TStorage::ShaderStageInfos l_StageInfos = makeContainer<typename TStorage::ShaderStageInfos>();
 		l_StageInfos.reserve(m_Stages.size());
-		Vec<Allocator, VkSpecializationInfo, 8> l_SpecInfos(m_Allocator);
+		typename TStorage::SpecializationInfos l_SpecInfos = makeContainer<typename TStorage::SpecializationInfos>();
 		l_SpecInfos.reserve(m_Stages.size());
-		for (const Stage& l_Stage : m_Stages)
+		for (const typename TStorage::Stage& l_Stage : m_Stages)
 		{
 			if (l_Stage.hasSpecialization)
 			{
@@ -897,7 +764,7 @@ namespace vkp::pipeline
 		}
 		for (size_t i = 0; i < m_Stages.size(); ++i)
 		{
-			const Stage& l_Stage = m_Stages[i];
+			const typename TStorage::Stage& l_Stage = m_Stages[i];
 			l_StageInfos.push_back({
 				.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 				.pNext = nullptr,
@@ -1031,7 +898,7 @@ namespace vkp::pipeline
 		const VkPipelineColorBlendStateCreateInfo* l_BlendState = m_ColorBlendOverride ? &*m_ColorBlendOverride : &l_BlendInfo;
 
 		const bool l_TessellationActive = m_Topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST
-			|| std::ranges::any_of(m_Stages, [](const Stage& p_Stage)
+			|| std::ranges::any_of(m_Stages, [](const typename TStorage::Stage& p_Stage)
 			{
 				return p_Stage.stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT || p_Stage.stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 			});
@@ -1054,7 +921,7 @@ namespace vkp::pipeline
 
 		VkGraphicsPipelineCreateInfo l_PipelineInfo{
 			.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-			.pNext = m_RenderPass == VK_NULL_HANDLE ? &l_RenderingInfo : nullptr,
+			.pNext = &l_RenderingInfo,
 			.flags = m_CreateFlags,
 			.stageCount = static_cast<uint32_t>(l_StageInfos.size()),
 			.pStages = l_StageInfos.data(),
@@ -1068,13 +935,13 @@ namespace vkp::pipeline
 			.pColorBlendState = l_BlendState,
 			.pDynamicState = &l_DynamicInfo,
 			.layout = l_Layout,
-			.renderPass = m_RenderPass,
-			.subpass = m_Subpass,
+			.renderPass = VK_NULL_HANDLE,
+			.subpass = 0,
 			.basePipelineHandle = VK_NULL_HANDLE,
 			.basePipelineIndex = -1,
 		};
 
-		const PipelineCacheGuard<Allocator> l_Cache(p_DeviceData, p_PipelineCache, m_CacheFolder, m_Allocator);
+		const detail::PipelineCacheGuard l_Cache(p_DeviceData, p_PipelineCache, m_CacheFolder);
 		VkPipeline l_Pipeline = VK_NULL_HANDLE;
 		VULKAN_TRY(p_DeviceData.deviceTable.vkCreateGraphicsPipelines(p_DeviceData.device, l_Cache.get(), 1, &l_PipelineInfo, nullptr, &l_Pipeline));
 
@@ -1084,18 +951,19 @@ namespace vkp::pipeline
 		return l_Out;
 	}
 
-	template<typename Allocator>
-	BasicPipelineData<Allocator> BasicPipelineBuilder<Allocator>::buildCompute(const device::DeviceData& p_DeviceData, const VkPipelineCache p_PipelineCache)
+	template<StoragePolicy TStorage>
+	BasicPipelineData<TStorage> BasicPipelineBuilder<TStorage>::buildCompute(const device::DeviceData& p_DeviceData, const VkPipelineCache p_PipelineCache)
 	{
 		if (m_Stages.size() != 1 || m_Stages[0].stage != VK_SHADER_STAGE_COMPUTE_BIT)
 		{
 			throw std::runtime_error("vkp::pipeline: compute pipeline requires exactly one compute stage");
 		}
 
-		Vec<Allocator, VkDescriptorSetLayout, 8> l_CreatedLayouts(m_Allocator);
+		typename TStorage::DescriptorSetLayouts l_CreatedLayouts = makeContainer<typename TStorage::DescriptorSetLayouts>();
 		std::span<const VkDescriptorSetLayout> l_Layouts;
 		VkPipelineLayout l_Layout = VK_NULL_HANDLE;
-		BasicPipelineData<Allocator> l_Out(m_Allocator);
+		BasicPipelineData<TStorage> l_Out;
+		l_Out.ownsLayout = m_InjectedLayout == VK_NULL_HANDLE;
 
 		if (m_InjectedLayout != VK_NULL_HANDLE)
 		{
@@ -1113,10 +981,10 @@ namespace vkp::pipeline
 				l_Layouts = m_DescriptorSetLayouts;
 			}
 
-			Vec<Allocator, VkPushConstantRange, 4> l_PushRanges(m_PushConstantRanges, m_Allocator);
+			typename TStorage::PushConstantRanges l_PushRanges = m_PushConstantRanges;
 			if (m_Reflection && l_PushRanges.empty())
 			{
-				l_PushRanges = reflectedPushConstantRanges(m_Reflection->layout(), stageMask(), m_Allocator);
+				detail::reflectedPushConstantRanges(l_PushRanges, m_Reflection->layout(), stageMask());
 			}
 
 			const VkPipelineLayoutCreateInfo l_LayoutInfo{
@@ -1131,7 +999,7 @@ namespace vkp::pipeline
 			VULKAN_TRY(p_DeviceData.deviceTable.vkCreatePipelineLayout(p_DeviceData.device, &l_LayoutInfo, nullptr, &l_Layout));
 		}
 
-		const Stage& l_Stage = m_Stages[0];
+		const typename TStorage::Stage& l_Stage = m_Stages[0];
 		VkSpecializationInfo l_SpecInfo{};
 		if (l_Stage.hasSpecialization)
 		{
@@ -1162,7 +1030,7 @@ namespace vkp::pipeline
 			.basePipelineIndex = -1,
 		};
 
-		const PipelineCacheGuard<Allocator> l_Cache(p_DeviceData, p_PipelineCache, m_CacheFolder, m_Allocator);
+		const detail::PipelineCacheGuard l_Cache(p_DeviceData, p_PipelineCache, m_CacheFolder);
 		VkPipeline l_Pipeline = VK_NULL_HANDLE;
 		VULKAN_TRY(p_DeviceData.deviceTable.vkCreateComputePipelines(p_DeviceData.device, l_Cache.get(), 1, &l_PipelineInfo, nullptr, &l_Pipeline));
 
@@ -1170,5 +1038,29 @@ namespace vkp::pipeline
 		l_Out.layout = l_Layout;
 		l_Out.descriptorSetLayouts = std::move(l_CreatedLayouts);
 		return l_Out;
+	}
+
+	template<StoragePolicy TStorage>
+	void destroyPipeline(const device::DeviceData& p_DeviceData, BasicPipelineData<TStorage>& p_Pipeline)
+	{
+		if (p_Pipeline.pipeline != VK_NULL_HANDLE)
+		{
+			p_DeviceData.deviceTable.vkDestroyPipeline(p_DeviceData.device, p_Pipeline.pipeline, nullptr);
+			p_Pipeline.pipeline = VK_NULL_HANDLE;
+		}
+		if (p_Pipeline.ownsLayout && p_Pipeline.layout != VK_NULL_HANDLE)
+		{
+			p_DeviceData.deviceTable.vkDestroyPipelineLayout(p_DeviceData.device, p_Pipeline.layout, nullptr);
+			p_Pipeline.layout = VK_NULL_HANDLE;
+		}
+		for (VkDescriptorSetLayout& l_Layout : p_Pipeline.descriptorSetLayouts)
+		{
+			if (l_Layout != VK_NULL_HANDLE)
+			{
+				p_DeviceData.deviceTable.vkDestroyDescriptorSetLayout(p_DeviceData.device, l_Layout, nullptr);
+				l_Layout = VK_NULL_HANDLE;
+			}
+		}
+		p_Pipeline.descriptorSetLayouts.clear();
 	}
 }

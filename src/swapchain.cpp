@@ -8,8 +8,8 @@
 
 namespace vkp
 {
-    Swapchain::Swapchain(const device::DeviceData& p_DeviceData, const VkSurfaceKHR p_Surface, const uint32_t p_FramesInFlight, const VkExtent2D p_Extent, const VkPresentModeKHR p_PresentMode)
-		: swapchain(VK_NULL_HANDLE), properties{ querySwapchainProperties(p_DeviceData.physicalDevice, p_Surface, p_FramesInFlight) }
+    Swapchain::Swapchain(const device::DeviceData& p_DeviceData, const VkSurfaceKHR p_Surface, const uint32_t p_FramesInFlight, const VkExtent2D p_Extent, const VkPresentModeKHR p_PresentMode, const std::span<const VkSurfaceFormatKHR> p_PreferredFormats)
+		: swapchain(VK_NULL_HANDLE), properties{ querySwapchainProperties(p_DeviceData.physicalDevice, p_Surface, p_FramesInFlight, p_PreferredFormats) }
 	{
 		properties.extent = p_Extent;
         properties.presentMode = p_PresentMode;
@@ -17,8 +17,6 @@ namespace vkp
 
 	void Swapchain::recreate(const device::DeviceData& p_DeviceData, const VkSurfaceKHR p_Surface, const VkExtent2D p_NewExtent)
 	{
-        p_DeviceData.deviceTable.vkDeviceWaitIdle(p_DeviceData.device);
-
         for (const VkImageView& l_ImageView : imageViews)
         {
             if (l_ImageView != VK_NULL_HANDLE)
@@ -107,6 +105,15 @@ namespace vkp
         }
 	}
 
+	ImageProperties Swapchain::imageProperties() const
+	{
+		return ImageProperties{
+			.format = properties.format.format,
+			.extent = VkExtent3D{ .width = properties.extent.width, .height = properties.extent.height, .depth = 1 },
+			.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		};
+	}
+
 	void Swapchain::destroy(const device::DeviceData& p_DeviceData)
 	{
         for (const VkImageView& l_ImageView : imageViews)
@@ -135,30 +142,43 @@ namespace vkp
         }
 	}
 
-	SwapchainProperties querySwapchainProperties(const VkPhysicalDevice p_PhysicalDevice, const VkSurfaceKHR p_Surface, const uint32_t p_DesiredFramesInFlight)
+	SwapchainProperties querySwapchainProperties(const VkPhysicalDevice p_PhysicalDevice, const VkSurfaceKHR p_Surface, const uint32_t p_DesiredFramesInFlight, const std::span<const VkSurfaceFormatKHR> p_PreferredFormats)
     {
-        VkSurfaceFormatKHR l_Format{};
-
-        SwapchainProperties l_Properties{};
-
-        uint32_t l_FormatCount;
+        uint32_t l_FormatCount = 0;
         vkGetPhysicalDeviceSurfaceFormatsKHR(p_PhysicalDevice, p_Surface, &l_FormatCount, nullptr);
         std::vector<VkSurfaceFormatKHR> l_Formats(l_FormatCount);
         vkGetPhysicalDeviceSurfaceFormatsKHR(p_PhysicalDevice, p_Surface, &l_FormatCount, l_Formats.data());
-
-        for (const VkSurfaceFormatKHR& l_Candidate : l_Formats)
+        if (l_Formats.empty())
         {
-            if (l_Candidate.format == VK_FORMAT_B8G8R8A8_SRGB && l_Candidate.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            throw std::runtime_error("vkp::swapchain: the surface reports no formats");
+        }
+
+        VkSurfaceFormatKHR l_Format{};
+        const bool l_AnyFormat = l_Formats[0].format == VK_FORMAT_UNDEFINED;
+        bool l_Chosen = false;
+        for (const VkSurfaceFormatKHR& l_Preferred : p_PreferredFormats)
+        {
+            const auto l_Match = std::ranges::find_if(l_Formats, [&](const VkSurfaceFormatKHR& p_Available)
             {
-                l_Format = l_Candidate;
+	            return l_AnyFormat || (p_Available.format == l_Preferred.format && p_Available.colorSpace == l_Preferred.colorSpace);
+            });
+            if (l_Match != l_Formats.end())
+            {
+                l_Format = l_AnyFormat ? l_Preferred : *l_Match;
+                l_Chosen = true;
                 break;
             }
         }
-        if (l_Format.format == VK_FORMAT_UNDEFINED)
+        if (!l_Chosen)
         {
+            if (l_AnyFormat)
+            {
+                throw std::runtime_error("vkp::swapchain: the surface accepts any format, so a preferred format has to be given");
+            }
             l_Format = l_Formats[0];
         }
 
+        SwapchainProperties l_Properties{};
         l_Properties.format = l_Format;
 
         VkSurfaceCapabilitiesKHR l_Capabilities;

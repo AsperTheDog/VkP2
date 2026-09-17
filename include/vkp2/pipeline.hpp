@@ -1,15 +1,14 @@
 #pragma once
 
 #include <filesystem>
-#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
+#include "concepts.hpp"
 #include "device.hpp"
-#include "extra/small_vector.hpp"
+#include "extra/static_vector.hpp"
 
 namespace vkp::shader
 {
@@ -19,31 +18,127 @@ namespace vkp::shader
 
 namespace vkp::pipeline
 {
-	template<typename Allocator, typename T, size_t N>
-	using Vec = SmallVector<T, N, typename std::allocator_traits<Allocator>::template rebind_alloc<T>>;
-
-	template<typename Allocator = std::allocator<void>>
-	struct BasicPipelineData
+	struct PipelineCapacities
 	{
-		BasicPipelineData() = default;
+		uint32_t shaderStages = 0;              // addShaderStage calls; also sizes the stage and specialization infos
+		uint32_t descriptorSetLayouts = 0;      // addDescriptorSetLayout calls, or layouts reflected from the shader
+		uint32_t descriptorBindings = 0;        // bindings inside a reflected layout, and their flags
+		uint32_t pushConstantRanges = 0;        // addPushConstantRange calls, or ranges reflected from the shader
+		uint32_t vertexBindings = 0;            // setVertexInput bindings, or the single binding generated from reflection
+		uint32_t vertexAttributes = 0;          // setVertexInput attributes, or attributes reflected from the shader
+		uint32_t dynamicStates = 0;             // addDynamicState calls; the builder seeds viewport and scissor, so at least 2
+		uint32_t specializationEntries = 0;     // entries in one addShaderStage specialization map
+		uint32_t specializationDataBytes = 0;   // bytes of one addShaderStage specialization data block
+	};
 
-		explicit BasicPipelineData(const Allocator& p_Allocator)
-			: descriptorSetLayouts(p_Allocator)
+	inline constexpr PipelineCapacities DefaultPipelineCapacities{
+		.shaderStages = 8,
+		.descriptorSetLayouts = 8,
+		.descriptorBindings = 32,
+		.pushConstantRanges = 4,
+		.vertexBindings = 8,
+		.vertexAttributes = 16,
+		.dynamicStates = 16,
+		.specializationEntries = 8,
+		.specializationDataBytes = 64,
+	};
+
+	template<Sequence TSpecializationEntries, Sequence TSpecializationData>
+	struct ShaderStage
+	{
+		ShaderStage() = default;
+
+		ShaderStage(const VkShaderModule p_Module, const VkShaderStageFlagBits p_Stage, std::string p_EntryPointName, TSpecializationEntries p_SpecializationEntries, TSpecializationData p_SpecializationData)
+			: module(p_Module)
+			, stage(p_Stage)
+			, entryPointName(std::move(p_EntryPointName))
+			, specializationEntries(std::move(p_SpecializationEntries))
+			, specializationData(std::move(p_SpecializationData))
 		{
 		}
 
-		VkPipeline pipeline = VK_NULL_HANDLE;
-		VkPipelineLayout layout = VK_NULL_HANDLE;
-		Vec<Allocator, VkDescriptorSetLayout, 8> descriptorSetLayouts;
+		VkShaderModule module = VK_NULL_HANDLE;
+		VkShaderStageFlagBits stage = VK_SHADER_STAGE_VERTEX_BIT;
+		std::string entryPointName;
+		TSpecializationEntries specializationEntries;
+		TSpecializationData specializationData;
+		bool hasSpecialization = false;
 	};
 
-	using PipelineData = BasicPipelineData<>;
+	struct NoAllocator {};
 
-	template<typename Allocator = std::allocator<void>>
+	template<typename T>
+	concept StoragePolicy = requires
+	{
+		typename T::ProtoAllocator;
+		typename T::Stage;
+		typename T::Stages;
+		typename T::DescriptorSetLayouts;
+		typename T::PushConstantRanges;
+		typename T::ColorFormats;
+		typename T::VertexBindings;
+		typename T::VertexAttributes;
+		typename T::DynamicStates;
+		typename T::ShaderStageInfos;
+		typename T::SpecializationInfos;
+	}
+	&& Sequence<typename T::Stages>
+	&& Sequence<typename T::DescriptorSetLayouts>
+	&& Sequence<typename T::PushConstantRanges>
+	&& Sequence<typename T::ColorFormats>
+	&& Sequence<typename T::VertexBindings>
+	&& Sequence<typename T::VertexAttributes>
+	&& Sequence<typename T::DynamicStates>
+	&& Sequence<typename T::ShaderStageInfos>
+	&& Sequence<typename T::SpecializationInfos>
+	&& requires(const typename T::ProtoAllocator& p_Allocator)
+	{
+		{ T::template make<typename T::Stages>(p_Allocator) } -> std::same_as<typename T::Stages>;
+	};
+
+	template<PipelineCapacities Capacities>
+	struct StaticPipelineStorage
+	{
+		using ProtoAllocator = NoAllocator;
+
+		using SpecializationEntries = StaticVector<VkSpecializationMapEntry, Capacities.specializationEntries>;
+		using SpecializationData = StaticVector<uint8_t, Capacities.specializationDataBytes>;
+		using Stage = ShaderStage<SpecializationEntries, SpecializationData>;
+		using Stages = StaticVector<Stage, Capacities.shaderStages>;
+		using DescriptorSetLayouts = StaticVector<VkDescriptorSetLayout, Capacities.descriptorSetLayouts>;
+		using DescriptorBindings = StaticVector<VkDescriptorSetLayoutBinding, Capacities.descriptorBindings>;
+		using DescriptorBindingFlags = StaticVector<VkDescriptorBindingFlags, Capacities.descriptorBindings>;
+		using PushConstantRanges = StaticVector<VkPushConstantRange, Capacities.pushConstantRanges>;
+		using ColorFormats = StaticVector<VkFormat, 8>;   // color attachments are capped at 8 by the hardware
+		using VertexBindings = StaticVector<VkVertexInputBindingDescription, Capacities.vertexBindings>;
+		using VertexAttributes = StaticVector<VkVertexInputAttributeDescription, Capacities.vertexAttributes>;
+		using DynamicStates = StaticVector<VkDynamicState, Capacities.dynamicStates>;
+		using ShaderStageInfos = StaticVector<VkPipelineShaderStageCreateInfo, Capacities.shaderStages>;
+		using SpecializationInfos = StaticVector<VkSpecializationInfo, Capacities.shaderStages>;
+
+		template<typename TContainer>
+		[[nodiscard]] static TContainer make(const ProtoAllocator&) { return TContainer{}; }
+	};
+
+	template<StoragePolicy TStorage>
+	struct BasicPipelineData
+	{
+		VkPipeline pipeline = VK_NULL_HANDLE;
+		VkPipelineLayout layout = VK_NULL_HANDLE;
+		TStorage::DescriptorSetLayouts descriptorSetLayouts;
+		bool ownsLayout = true;
+	};
+
+	template<PipelineCapacities Capacities>
+	using PipelineData = BasicPipelineData<StaticPipelineStorage<Capacities>>;
+
+	using DefaultPipelineData = PipelineData<DefaultPipelineCapacities>;
+
+	template<StoragePolicy TStorage>
 	class BasicPipelineBuilder
 	{
 	public:
-		explicit BasicPipelineBuilder(const Allocator& p_Allocator = Allocator());
+		explicit BasicPipelineBuilder(TStorage::ProtoAllocator p_Allocator = {});
 
 		BasicPipelineBuilder& addShaderStage(VkShaderModule p_Module, VkShaderStageFlagBits p_Stage, std::string_view p_EntryPointName = "main");
 		BasicPipelineBuilder& addShaderStage(VkShaderModule p_Module, VkShaderStageFlagBits p_Stage, std::string_view p_EntryPointName, std::span<const VkSpecializationMapEntry> p_SpecializationMap, std::span<const uint8_t> p_SpecializationData);
@@ -53,7 +148,6 @@ namespace vkp::pipeline
 		BasicPipelineBuilder& useReflection(const shader::Shader<true>& p_Shader);
 
 		BasicPipelineBuilder& setPipelineCacheFolder(std::filesystem::path p_Folder);
-		BasicPipelineBuilder& setRenderPass(VkRenderPass p_RenderPass, uint32_t p_Subpass = 0);
 		BasicPipelineBuilder& setColorFormats(std::span<const VkFormat> p_Formats);
 		BasicPipelineBuilder& setDepthFormat(VkFormat p_Format);
 		BasicPipelineBuilder& setVertexInput(std::span<const VkVertexInputBindingDescription> p_Bindings, std::span<const VkVertexInputAttributeDescription> p_Attributes);
@@ -77,43 +171,31 @@ namespace vkp::pipeline
 		BasicPipelineBuilder& setDynamicBlendConstants();
 		BasicPipelineBuilder& addDynamicState(VkDynamicState p_State);
 
-		[[nodiscard]] BasicPipelineData<Allocator> buildGraphics(const device::DeviceData& p_DeviceData, VkPipelineCache p_PipelineCache = VK_NULL_HANDLE);
-		[[nodiscard]] BasicPipelineData<Allocator> buildCompute(const device::DeviceData& p_DeviceData, VkPipelineCache p_PipelineCache = VK_NULL_HANDLE);
+		[[nodiscard]] BasicPipelineData<TStorage> buildGraphics(const device::DeviceData& p_DeviceData, VkPipelineCache p_PipelineCache = VK_NULL_HANDLE);
+		[[nodiscard]] BasicPipelineData<TStorage> buildCompute(const device::DeviceData& p_DeviceData, VkPipelineCache p_PipelineCache = VK_NULL_HANDLE);
 
 	private:
-		struct Stage
-		{
-			VkShaderModule module;
-			VkShaderStageFlagBits stage;
-			std::string entryPointName;
-			Vec<Allocator, VkSpecializationMapEntry, 8> specializationEntries;
-			Vec<Allocator, uint8_t, 64> specializationData;
-			bool hasSpecialization = false;
-
-			Stage(const VkShaderModule p_Module, const VkShaderStageFlagBits p_Stage, std::string p_EntryPointName, const Allocator& p_Allocator)
-				: module(p_Module), stage(p_Stage), entryPointName(std::move(p_EntryPointName)), specializationEntries(p_Allocator), specializationData(p_Allocator) {}
-		};
+		template<Sequence TContainer>
+		[[nodiscard]] TContainer makeContainer() const { return TStorage::template make<TContainer>(m_Allocator); }
 
 		VkShaderStageFlags stageMask() const;
 		void generateVertexInput();
-		Vec<Allocator, VkDescriptorSetLayout, 8> createDescriptorSetLayouts(const device::DeviceData& p_DeviceData) const;
+		TStorage::DescriptorSetLayouts createDescriptorSetLayouts(const device::DeviceData& p_DeviceData) const;
 
-		Allocator m_Allocator;
-		Vec<Allocator, Stage, 8> m_Stages;
-		Vec<Allocator, VkDescriptorSetLayout, 8> m_DescriptorSetLayouts;
-		Vec<Allocator, VkPushConstantRange, 4> m_PushConstantRanges;
+		TStorage::ProtoAllocator m_Allocator{};
+		TStorage::Stages m_Stages;
+		TStorage::DescriptorSetLayouts m_DescriptorSetLayouts;
+		TStorage::PushConstantRanges m_PushConstantRanges;
 		std::filesystem::path m_CacheFolder;
 
 		VkPipelineLayout m_InjectedLayout = VK_NULL_HANDLE;
 		const shader::Shader<true>* m_Reflection = nullptr;
 
-		VkRenderPass m_RenderPass = VK_NULL_HANDLE;
-		uint32_t m_Subpass = 0;
-		Vec<Allocator, VkFormat, 8> m_ColorFormats;
+		TStorage::ColorFormats m_ColorFormats;
 		VkFormat m_DepthFormat = VK_FORMAT_UNDEFINED;
 
-		Vec<Allocator, VkVertexInputBindingDescription, 8> m_VertexBindings;
-		Vec<Allocator, VkVertexInputAttributeDescription, 16> m_VertexAttributes;
+		TStorage::VertexBindings m_VertexBindings;
+		TStorage::VertexAttributes m_VertexAttributes;
 		bool m_HasVertexInput = false;
 
 		VkPrimitiveTopology m_Topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -131,10 +213,16 @@ namespace vkp::pipeline
 		uint32_t m_PatchControlPoints = 0;
 		bool m_HasPatchControlPoints = false;
 		VkPipelineCreateFlags m_CreateFlags = 0;
-		Vec<Allocator, VkDynamicState, 16> m_DynamicStates;
+		TStorage::DynamicStates m_DynamicStates;
 	};
 
-	using PipelineBuilder = BasicPipelineBuilder<>;
+	template<PipelineCapacities Capacities>
+	using PipelineBuilder = BasicPipelineBuilder<StaticPipelineStorage<Capacities>>;
+
+	using DefaultPipelineBuilder = PipelineBuilder<DefaultPipelineCapacities>;
+
+	template<StoragePolicy TStorage>
+	void destroyPipeline(const device::DeviceData& p_DeviceData, BasicPipelineData<TStorage>& p_Pipeline);
 }
 
 #include "inline/pipeline.inl"

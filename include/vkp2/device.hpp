@@ -229,7 +229,6 @@ namespace vkp::device {
         uint32_t m_UberQueueInfo = UINT32_MAX;
     };
 
-    template<bool IncludeRender = true>
     struct LeanVulkan
     {
         static uint32_t evaluate(VkPhysicalDevice p_Device, VkInstance, std::optional<VkSurfaceKHR>, LeanVulkan*)
@@ -243,11 +242,7 @@ namespace vkp::device {
 			l_Features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 			l_Features2.pNext = &l_Features12;
 			vkGetPhysicalDeviceFeatures2(p_Device, &l_Features2);
-			bool l_Vk13Supported = l_Features13.synchronization2;
-            if constexpr (IncludeRender)
-            {
-                l_Vk13Supported = l_Vk13Supported && l_Features13.dynamicRendering;
-            }
+			const bool l_Vk13Supported = l_Features13.synchronization2 && l_Features13.dynamicRendering;
 			bool l_Vk12Supported = l_Features12.timelineSemaphore && l_Features12.bufferDeviceAddress && l_Features12.descriptorIndexing;
 			if (l_Vk13Supported && l_Vk12Supported)
 			{
@@ -258,10 +253,7 @@ namespace vkp::device {
 
         static void activate(DeviceActivationContext& p_Context, LeanVulkan*)
         {
-            if constexpr (IncludeRender)
-            {
-	            p_Context.features13.dynamicRendering = VK_TRUE;
-            }
+            p_Context.features13.dynamicRendering = VK_TRUE;
 			p_Context.features13.synchronization2 = VK_TRUE;
 			p_Context.features12.timelineSemaphore = VK_TRUE;
 			p_Context.features12.bufferDeviceAddress = VK_TRUE;
@@ -473,27 +465,17 @@ namespace vkp::device {
         }
     };
 
-    template<bool IncludeRender = true>
-    auto LeanModern(const uint64_t p_MinimalRam = 0)
+    inline auto LeanModern(const uint64_t p_MinimalRam = 0)
     {
         auto baseGroup = std::make_tuple(
             BasicProperties{ .minimalRam = p_MinimalRam, .minVkVersion = VK_API_VERSION_1_3 },
-            LeanVulkan<IncludeRender>{},
+            LeanVulkan{},
             UberQueueFamily{ true },
             ExtendedDynamicState{},
             ExtendedDynamicState2{}
         );
 
-        auto renderGroup = []{
-            if constexpr (IncludeRender)
-            {
-                return std::make_tuple(Swapchain{});
-            }
-            else
-            {
-                return std::tuple<>{};
-            }
-        }();
+        auto renderGroup = std::make_tuple(Swapchain{});
 
         return std::apply([]<typename... Evaluators>(Evaluators&&... args){
             return makeGroup(std::forward<Evaluators>(args)...);

@@ -27,26 +27,22 @@ namespace vkp
 {
 
 	InstanceBuilder::InstanceBuilder()
+		: m_ApplicationName("Vulkan App"), m_EngineName("No Engine")
 	{
-		vkEnumerateInstanceVersion(&m_appInfo.apiVersion);
-		m_appInfo.apiVersion = std::min(m_appInfo.apiVersion, VK_HEADER_VERSION_COMPLETE);
+		vkEnumerateInstanceVersion(&m_AppInfo.apiVersion);
+		m_AppInfo.apiVersion = std::min(m_AppInfo.apiVersion, VK_HEADER_VERSION_COMPLETE);
 
-		m_appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-		m_appInfo.pApplicationName = "Vulkan App";
-		m_appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-		m_appInfo.pEngineName = "No Engine";
-		m_appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-
-		m_createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-		m_createInfo.pApplicationInfo = &m_appInfo;
+		m_AppInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		m_AppInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+		m_AppInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
 	}
 
 	InstanceBuilder& InstanceBuilder::setAppInfo(const std::string_view p_ApplicationName, const uint32_t p_ApplicationVersion, const std::string_view p_EngineName, const uint32_t p_EngineVersion)
 	{
-		m_appInfo.pApplicationName = p_ApplicationName.data();
-		m_appInfo.applicationVersion = p_ApplicationVersion;
-		m_appInfo.pEngineName = p_EngineName.data();
-		m_appInfo.engineVersion = p_EngineVersion;
+		m_ApplicationName = p_ApplicationName;
+		m_EngineName = p_EngineName;
+		m_AppInfo.applicationVersion = p_ApplicationVersion;
+		m_AppInfo.engineVersion = p_EngineVersion;
 		return *this;
 	}
 
@@ -60,7 +56,6 @@ namespace vkp
 			m_DebugCreateInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 			m_DebugCreateInfo.pfnUserCallback = p_Callback;
 			m_DebugCreateInfo.pUserData = nullptr;
-			m_createInfo.pNext = &m_DebugCreateInfo;
 			addExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		}
 		return *this;
@@ -69,8 +64,6 @@ namespace vkp
 	InstanceBuilder& InstanceBuilder::addLayer(const char* p_Layer)
 	{
 		m_Layers.push_back(p_Layer);
-		m_createInfo.enabledLayerCount = static_cast<uint32_t>(m_Layers.size());
-		m_createInfo.ppEnabledLayerNames = m_Layers.data();
 		return *this;
 	}
 
@@ -86,8 +79,6 @@ namespace vkp
 	InstanceBuilder& InstanceBuilder::addExtension(const char* p_Extension)
 	{
 		m_Extensions.push_back(p_Extension);
-		m_createInfo.enabledExtensionCount = static_cast<uint32_t>(m_Extensions.size());
-		m_createInfo.ppEnabledExtensionNames = m_Extensions.data();
 		return *this;
 	}
 
@@ -102,9 +93,22 @@ namespace vkp
 
 	InstanceBuilder::ReturnData InstanceBuilder::build() const
 	{
+		VkApplicationInfo l_AppInfo = m_AppInfo;
+		l_AppInfo.pApplicationName = m_ApplicationName.c_str();
+		l_AppInfo.pEngineName = m_EngineName.c_str();
+
+		VkInstanceCreateInfo l_CreateInfo{};
+		l_CreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		l_CreateInfo.pNext = m_DebugCreateInfo.pfnUserCallback ? &m_DebugCreateInfo : nullptr;
+		l_CreateInfo.pApplicationInfo = &l_AppInfo;
+		l_CreateInfo.enabledLayerCount = static_cast<uint32_t>(m_Layers.size());
+		l_CreateInfo.ppEnabledLayerNames = m_Layers.data();
+		l_CreateInfo.enabledExtensionCount = static_cast<uint32_t>(m_Extensions.size());
+		l_CreateInfo.ppEnabledExtensionNames = m_Extensions.data();
+
 		ReturnData l_Data{};
 
-		VULKAN_TRY(vkCreateInstance(&m_createInfo, nullptr, &l_Data.instance));
+		VULKAN_TRY(vkCreateInstance(&l_CreateInfo, nullptr, &l_Data.instance));
 
 		volkLoadInstance(l_Data.instance);
 

@@ -10,79 +10,161 @@
 namespace vkp
 {
 
-	ImageData createImage(const device::DeviceData& p_DeviceData, const VkImageCreateInfo& p_ImageInfo, const VmaAllocationCreateInfo& p_AllocInfo)
+	VkImageCreateInfo ImageProperties::toVkImageCreateInfo() const
 	{
-		ImageData l_Ret{};
-#ifndef NDEBUG
-		VULKAN_TRY(vmaCreateImage(p_DeviceData.allocator, &p_ImageInfo, &p_AllocInfo, &l_Ret.image, &l_Ret.alloc, &l_Ret.info));
-#else
-		VULKAN_TRY(vmaCreateImage(p_DeviceData.allocator, &p_ImageInfo, &p_AllocInfo, &l_Ret.image, &l_Ret.alloc, VK_NULL_HANDLE));
-#endif
+		return VkImageCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = flags,
+			.imageType = imageType,
+			.format = format,
+			.extent = extent,
+			.mipLevels = mipLevels,
+			.arrayLayers = arrayLayers,
+			.samples = samples,
+			.tiling = tiling,
+			.usage = usage,
+			.sharingMode = sharingMode,
+			.queueFamilyIndexCount = 0,
+			.pQueueFamilyIndices = nullptr,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+		};
+	}
+
+	VkImageAspectFlags ImageProperties::aspectMaskForFormat(const VkFormat p_Format)
+	{
+		switch (p_Format)
+		{
+		case VK_FORMAT_D16_UNORM:
+		case VK_FORMAT_X8_D24_UNORM_PACK32:
+		case VK_FORMAT_D32_SFLOAT:
+			return VK_IMAGE_ASPECT_DEPTH_BIT;
+		case VK_FORMAT_S8_UINT:
+			return VK_IMAGE_ASPECT_STENCIL_BIT;
+		case VK_FORMAT_D16_UNORM_S8_UINT:
+		case VK_FORMAT_D24_UNORM_S8_UINT:
+		case VK_FORMAT_D32_SFLOAT_S8_UINT:
+			return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+		default:
+			return VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+	}
+
+	VkImageAspectFlags ImageProperties::aspectMask() const
+	{
+		return aspectMaskForFormat(format);
+	}
+
+	VkImageSubresourceRange ImageProperties::subresourceRange() const
+	{
+		return VkImageSubresourceRange{
+			.aspectMask = aspectMask(),
+			.baseMipLevel = 0,
+			.levelCount = mipLevels,
+			.baseArrayLayer = 0,
+			.layerCount = arrayLayers,
+		};
+	}
+
+	namespace
+	{
+		ImageProperties propertiesFromCreateInfo(const VkImageCreateInfo& p_ImageInfo)
+		{
+			return ImageProperties{
+				.flags = p_ImageInfo.flags,
+				.imageType = p_ImageInfo.imageType,
+				.format = p_ImageInfo.format,
+				.extent = p_ImageInfo.extent,
+				.mipLevels = p_ImageInfo.mipLevels,
+				.arrayLayers = p_ImageInfo.arrayLayers,
+				.samples = p_ImageInfo.samples,
+				.tiling = p_ImageInfo.tiling,
+				.usage = p_ImageInfo.usage,
+				.sharingMode = p_ImageInfo.sharingMode,
+			};
+		}
+	}
+
+	Image createImage(const device::DeviceData& p_DeviceData, const VkImageCreateInfo& p_ImageInfo, const VmaAllocationCreateInfo& p_AllocInfo)
+	{
+		Image l_Ret{};
+		l_Ret.properties = propertiesFromCreateInfo(p_ImageInfo);
+		VULKAN_TRY(vmaCreateImage(p_DeviceData.allocator, &p_ImageInfo, &p_AllocInfo, &l_Ret.data.image, &l_Ret.data.alloc, &l_Ret.data.info));
 
 		return l_Ret;
 	}
 
-	ImageData createImage(const device::DeviceData& p_DeviceData, const SimpleImgInfo& p_ImageInfo, const VmaAllocationCreateInfo& p_AllocInfo)
+	Image createImage(const device::DeviceData& p_DeviceData, const ImageProperties& p_Properties, const VmaAllocationCreateInfo& p_AllocInfo)
 	{
-		return createImage(p_DeviceData, p_ImageInfo.toVkImageCreateInfo(), p_AllocInfo);
+		Image l_Ret = createImage(p_DeviceData, p_Properties.toVkImageCreateInfo(), p_AllocInfo);
+		l_Ret.properties = p_Properties;
+		return l_Ret;
 	}
 
-	ImageData createDepthBuffer(const device::DeviceData& p_DeviceData, const Swapchain& p_Swapchain, const VmaAllocationCreateInfo& p_AllocInfo)
+	Image createDepthBuffer(const device::DeviceData& p_DeviceData, const VkExtent2D p_Extent, const VmaAllocationCreateInfo& p_AllocInfo)
 	{
-		const VkExtent3D l_Extent = {
-			.width = p_Swapchain.properties.extent.width,
-			.height = p_Swapchain.properties.extent.height,
-			.depth = 1
-		};
-
-		const VkImageCreateInfo l_ImageInfo{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.imageType = VK_IMAGE_TYPE_2D,
+		const ImageProperties l_Properties{
 			.format = VK_FORMAT_D32_SFLOAT,
-			.extent = l_Extent,
-			.mipLevels = 1,
-			.arrayLayers = 1,
-			.samples = VK_SAMPLE_COUNT_1_BIT,
-			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.extent = VkExtent3D{ .width = p_Extent.width, .height = p_Extent.height, .depth = 1 },
 			.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-			.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.queueFamilyIndexCount = 0,
-			.pQueueFamilyIndices = nullptr,
-			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 		};
 
-		return createImage(p_DeviceData, l_ImageInfo, p_AllocInfo);
+		return createImage(p_DeviceData, l_Properties, p_AllocInfo);
+	}
+
+	void destroyImage(const device::DeviceData& p_DeviceData, Image& p_Image)
+	{
+		if (p_Image.data.image != VK_NULL_HANDLE)
+		{
+			vmaDestroyImage(p_DeviceData.allocator, p_Image.data.image, p_Image.data.alloc);
+			p_Image.data.image = VK_NULL_HANDLE;
+			p_Image.data.alloc = VK_NULL_HANDLE;
+		}
+	}
+
+	namespace
+	{
+		VkImageView createImageViewWithRange(const device::DeviceData& p_DeviceData, const VkImage p_Image, const VkFormat p_Format, const VkImageSubresourceRange& p_Range, const VkImageViewType p_Type)
+		{
+			const VkImageViewCreateInfo l_ImageViewInfo{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+				.pNext = nullptr,
+				.flags = 0,
+				.image = p_Image,
+				.viewType = p_Type,
+				.format = p_Format,
+				.components = {
+					.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.g = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.b = VK_COMPONENT_SWIZZLE_IDENTITY,
+					.a = VK_COMPONENT_SWIZZLE_IDENTITY
+				},
+				.subresourceRange = p_Range
+			};
+
+			VkImageView l_ImageView = VK_NULL_HANDLE;
+			VULKAN_TRY(p_DeviceData.deviceTable.vkCreateImageView(p_DeviceData.device, &l_ImageViewInfo, nullptr, &l_ImageView));
+			return l_ImageView;
+		}
 	}
 
 	VkImageView createImageView(const vkp::device::DeviceData& p_DeviceData, const VkImage p_Image, const VkFormat p_Format, const VkImageAspectFlags p_AspectFlags, const VkImageViewType p_Type)
 	{
-		const VkImageViewCreateInfo l_ImageViewInfo{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = 0,
-			.image = p_Image,
-			.viewType = p_Type,
-			.format = p_Format,
-			.components = {
-				.r = VK_COMPONENT_SWIZZLE_IDENTITY,
-				.g = VK_COMPONENT_SWIZZLE_IDENTITY,
-				.b = VK_COMPONENT_SWIZZLE_IDENTITY,
-				.a = VK_COMPONENT_SWIZZLE_IDENTITY
-			},
-			.subresourceRange = {
-				.aspectMask = p_AspectFlags,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1
-			}
-		};
+		return createImageViewWithRange(p_DeviceData, p_Image, p_Format, VkImageSubresourceRange{ .aspectMask = p_AspectFlags, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1 }, p_Type);
+	}
 
-		VkImageView l_ImageView;
-		VULKAN_TRY(p_DeviceData.deviceTable.vkCreateImageView(p_DeviceData.device, &l_ImageViewInfo, nullptr, &l_ImageView));
-		return l_ImageView;
+	VkImageView createImageView(const vkp::device::DeviceData& p_DeviceData, const Image& p_Image, const VkImageViewType p_Type)
+	{
+		return createImageViewWithRange(p_DeviceData, p_Image.data.image, p_Image.properties.format, p_Image.properties.subresourceRange(), p_Type);
+	}
+
+	void destroyImageView(const device::DeviceData& p_DeviceData, VkImageView& p_ImageView)
+	{
+		if (p_ImageView != VK_NULL_HANDLE)
+		{
+			p_DeviceData.deviceTable.vkDestroyImageView(p_DeviceData.device, p_ImageView, nullptr);
+			p_ImageView = VK_NULL_HANDLE;
+		}
 	}
 
 	VkSampler createSampler(const device::DeviceData& p_DeviceData, const VkSamplerCreateInfo& p_Info)
@@ -128,80 +210,48 @@ namespace vkp
 
 	namespace
 	{
-		uint32_t imagePixelSize(const VkFormat p_Format)
-		{
-			switch (p_Format)
-			{
-			case VK_FORMAT_R8_UNORM:
-			case VK_FORMAT_R8_SRGB:
-			case VK_FORMAT_R8_UINT:
-			case VK_FORMAT_R8_SINT: return 1;
-			case VK_FORMAT_R8G8_UNORM:
-			case VK_FORMAT_R8G8_SRGB:
-			case VK_FORMAT_R16_SFLOAT:
-			case VK_FORMAT_R16_UNORM:
-			case VK_FORMAT_R16_UINT:
-			case VK_FORMAT_R16_SINT: return 2;
-			case VK_FORMAT_R8G8B8A8_UNORM:
-			case VK_FORMAT_R8G8B8A8_SRGB:
-			case VK_FORMAT_R8G8B8A8_UINT:
-			case VK_FORMAT_R8G8B8A8_SINT:
-			case VK_FORMAT_B8G8R8A8_UNORM:
-			case VK_FORMAT_B8G8R8A8_SRGB:
-			case VK_FORMAT_R32_SFLOAT:
-			case VK_FORMAT_R32_UINT:
-			case VK_FORMAT_R32_SINT:
-			case VK_FORMAT_R16G16_SFLOAT:
-			case VK_FORMAT_R16G16_UNORM:
-			case VK_FORMAT_R16G16_UINT:
-			case VK_FORMAT_R16G16_SINT: return 4;
-			case VK_FORMAT_R16G16B16A16_SFLOAT:
-			case VK_FORMAT_R16G16B16A16_UNORM:
-			case VK_FORMAT_R16G16B16A16_UINT:
-			case VK_FORMAT_R16G16B16A16_SINT:
-			case VK_FORMAT_R32G32_SFLOAT:
-			case VK_FORMAT_R32G32_UINT:
-			case VK_FORMAT_R32G32_SINT: return 8;
-			case VK_FORMAT_R32G32B32A32_SFLOAT:
-			case VK_FORMAT_R32G32B32A32_UINT:
-			case VK_FORMAT_R32G32B32A32_SINT: return 16;
-			default: throw std::runtime_error("vkp::image: unsupported upload format");
-			}
-		}
 	}
 
-	void uploadImage(device::DeviceData& p_DeviceData, const VkCommandPool p_Pool, const VkQueue p_Queue, const ImageData& p_Image, const VkFormat p_Format, const uint32_t p_Width, const uint32_t p_Height, const void* p_Data, const VkImageLayout p_FinalLayout)
+	void uploadImage(device::DeviceData& p_DeviceData, const VkCommandPool p_Pool, const VkQueue p_Queue, const Image& p_Image, const void* p_Data, const VkDeviceSize p_Size, const VkImageLayout p_FinalLayout)
 	{
-		const uint32_t l_PixelSize = imagePixelSize(p_Format);
-		const VkDeviceSize l_Size = static_cast<VkDeviceSize>(p_Width) * p_Height * l_PixelSize;
+		const uint32_t l_Width = p_Image.properties.extent.width;
+		const uint32_t l_Height = p_Image.properties.extent.height;
 
 		constexpr VmaAllocationCreateInfo l_StagingAllocInfo{
 			.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
 			.usage = VMA_MEMORY_USAGE_AUTO,
 		};
-		BufferData l_Staging = createBuffer(p_DeviceData, l_Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, l_StagingAllocInfo);
+		BufferData l_Staging = createBuffer(p_DeviceData, p_Size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, l_StagingAllocInfo);
 
 		void* l_Mapped = nullptr;
 		vmaMapMemory(p_DeviceData.allocator, l_Staging.alloc, &l_Mapped);
-		std::memcpy(l_Mapped, p_Data, static_cast<size_t>(l_Size));
+		std::memcpy(l_Mapped, p_Data, static_cast<size_t>(p_Size));
 		vmaFlushAllocation(p_DeviceData.allocator, l_Staging.alloc, 0, VK_WHOLE_SIZE);
 		vmaUnmapMemory(p_DeviceData.allocator, l_Staging.alloc);
 
 		cmd::immediateSubmitScope(p_DeviceData, p_DeviceData.device, p_Pool, p_Queue, [&](const VkCommandBuffer p_Cb)
 		{
-			cmd::transitionImage(p_DeviceData, p_Cb, p_Image.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+			cmd::BasicBarrierBuilder<0, 0, 1>{}
+				.image(p_Image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE,
+					VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT)
+				.record(p_DeviceData, p_Cb);
 
 			const VkBufferImageCopy l_Region{
 				.bufferOffset = 0,
 				.bufferRowLength = 0,
 				.bufferImageHeight = 0,
-				.imageSubresource = VkImageSubresourceLayers{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+				.imageSubresource = VkImageSubresourceLayers{ .aspectMask = p_Image.properties.aspectMask(), .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
 				.imageOffset = VkOffset3D{ 0, 0, 0 },
-				.imageExtent = VkExtent3D{ p_Width, p_Height, 1 },
+				.imageExtent = VkExtent3D{ l_Width, l_Height, 1 },
 			};
-			p_DeviceData.deviceTable.vkCmdCopyBufferToImage(p_Cb, l_Staging.buffer, p_Image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &l_Region);
+			p_DeviceData.deviceTable.vkCmdCopyBufferToImage(p_Cb, l_Staging.buffer, p_Image.data.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &l_Region);
 
-			cmd::transitionImage(p_DeviceData, p_Cb, p_Image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, p_FinalLayout, VK_IMAGE_ASPECT_COLOR_BIT);
+			cmd::BasicBarrierBuilder<0, 0, 1>{}
+				.image(p_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, p_FinalLayout,
+					VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+					VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT)
+				.record(p_DeviceData, p_Cb);
 		});
 
 		destroyBuffer(p_DeviceData, l_Staging);

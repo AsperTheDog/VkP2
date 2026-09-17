@@ -11,9 +11,7 @@ namespace vkp
 	{
 		VkBuffer buffer = VK_NULL_HANDLE;
 		VmaAllocation alloc = VK_NULL_HANDLE;
-#ifndef NDEBUG
 		VmaAllocationInfo info{};
-#endif
 	};
 
 	BufferData createBuffer(const device::DeviceData& p_DeviceData, const VkBufferCreateInfo& p_BufferInfo, const VmaAllocationCreateInfo& p_AllocInfo);

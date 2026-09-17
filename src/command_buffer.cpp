@@ -9,7 +9,7 @@ namespace vkp {
 			.flags = p_Flags,
 			.queueFamilyIndex = p_QueueFamilyIndex
 		};
-		vkCreateCommandPool(p_Device, &l_PoolInfo, nullptr, &handle);
+		VULKAN_TRY(vkCreateCommandPool(p_Device, &l_PoolInfo, nullptr, &handle));
 	}
 
 	void cmd::CommandPool::destroy(const VkDevice p_Device)
@@ -23,7 +23,7 @@ namespace vkp {
 
 	void cmd::CommandPool::reset(const VkDevice p_Device, const VkCommandPoolResetFlags p_Flags) const
 	{
-		vkResetCommandPool(p_Device, handle, p_Flags);
+		VULKAN_TRY(vkResetCommandPool(p_Device, handle, p_Flags));
 	}
 
 	void cmd::CommandPool::allocate(const VkDevice p_Device, std::span<VkCommandBuffer> p_OutBuffers, const VkCommandBufferLevel p_Level) const

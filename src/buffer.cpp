@@ -10,11 +10,7 @@ namespace vkp
 	BufferData createBuffer(const device::DeviceData& p_DeviceData, const VkBufferCreateInfo& p_BufferInfo, const VmaAllocationCreateInfo& p_AllocInfo)
 	{
 		BufferData l_Buffer{};
-#ifndef NDEBUG
 		VULKAN_TRY(vmaCreateBuffer(p_DeviceData.allocator, &p_BufferInfo, &p_AllocInfo, &l_Buffer.buffer, &l_Buffer.alloc, &l_Buffer.info));
-#else
-		VULKAN_TRY(vmaCreateBuffer(p_DeviceData.allocator, &p_BufferInfo, &p_AllocInfo, &l_Buffer.buffer, &l_Buffer.alloc, nullptr));
-#endif
 		return l_Buffer;
 	}
 

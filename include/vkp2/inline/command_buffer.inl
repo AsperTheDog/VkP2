@@ -1,12 +1,266 @@
 #pragma once
 
-#include <array>
-#include <optional>
-
-#include "extra/small_vector.hpp"
+#include <algorithm>
 
 namespace vkp::cmd
 {
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE VkMemoryBarrier2& ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::emplaceMemory()
+    {
+        if (m_MemoryCount == MemoryCount)
+        {
+            throw std::runtime_error("vkp::cmd: no room for another memory barrier in this storage");
+        }
+        return m_Memory[m_MemoryCount++];
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE VkBufferMemoryBarrier2& ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::emplaceBuffer()
+    {
+        if (m_BufferCount == BufferCount)
+        {
+            throw std::runtime_error("vkp::cmd: no room for another buffer barrier in this storage");
+        }
+        return m_Buffer[m_BufferCount++];
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE VkImageMemoryBarrier2& ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::emplaceImage()
+    {
+        if (m_ImageCount == ImageCount)
+        {
+            throw std::runtime_error("vkp::cmd: no room for another image barrier in this storage");
+        }
+        return m_Image[m_ImageCount++];
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE const VkMemoryBarrier2* ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::memoryData() const
+    {
+        return m_MemoryCount == 0 ? nullptr : m_Memory.data();
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE const VkBufferMemoryBarrier2* ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::bufferData() const
+    {
+        return m_BufferCount == 0 ? nullptr : m_Buffer.data();
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE const VkImageMemoryBarrier2* ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::imageData() const
+    {
+        return m_ImageCount == 0 ? nullptr : m_Image.data();
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE uint32_t ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::memoryCount() const
+    {
+        return m_MemoryCount;
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE uint32_t ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::bufferCount() const
+    {
+        return m_BufferCount;
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE uint32_t ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::imageCount() const
+    {
+        return m_ImageCount;
+    }
+
+    template<uint32_t MemoryCount, uint32_t BufferCount, uint32_t ImageCount>
+    VKP_FORCEINLINE void ArrayBarrierStorage<MemoryCount, BufferCount, ImageCount>::clear()
+    {
+        m_MemoryCount = 0;
+        m_BufferCount = 0;
+        m_ImageCount = 0;
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE BarrierBuilder<Storage>& BarrierBuilder<Storage>::memory(const VkPipelineStageFlags2 p_SrcStage, const VkAccessFlags2 p_SrcAccess, const VkPipelineStageFlags2 p_DstStage, const VkAccessFlags2 p_DstAccess)
+    {
+        m_Storage.emplaceMemory() = VkMemoryBarrier2{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = p_SrcStage,
+            .srcAccessMask = p_SrcAccess,
+            .dstStageMask = p_DstStage,
+            .dstAccessMask = p_DstAccess,
+        };
+        return *this;
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE BarrierBuilder<Storage>& BarrierBuilder<Storage>::buffer(const VkBuffer p_Buffer, const VkDeviceSize p_Offset, const VkDeviceSize p_Size, const VkPipelineStageFlags2 p_SrcStage, const VkAccessFlags2 p_SrcAccess, const VkPipelineStageFlags2 p_DstStage, const VkAccessFlags2 p_DstAccess, const uint32_t p_SrcQueueFamily, const uint32_t p_DstQueueFamily)
+    {
+        m_Storage.emplaceBuffer() = VkBufferMemoryBarrier2{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = p_SrcStage,
+            .srcAccessMask = p_SrcAccess,
+            .dstStageMask = p_DstStage,
+            .dstAccessMask = p_DstAccess,
+            .srcQueueFamilyIndex = p_SrcQueueFamily,
+            .dstQueueFamilyIndex = p_DstQueueFamily,
+            .buffer = p_Buffer,
+            .offset = p_Offset,
+            .size = p_Size,
+        };
+        return *this;
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE BarrierBuilder<Storage>& BarrierBuilder<Storage>::image(const VkImage p_Image, const VkImageSubresourceRange& p_Range, const ImageBarrierData& p_ImageData)
+    {
+        m_Storage.emplaceImage() = VkImageMemoryBarrier2{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = p_ImageData.srcStage,
+            .srcAccessMask = p_ImageData.srcAccess,
+            .dstStageMask = p_ImageData.dstStage,
+            .dstAccessMask = p_ImageData.dstAccess,
+            .oldLayout = p_ImageData.oldLayout,
+            .newLayout = p_ImageData.newLayout,
+            .srcQueueFamilyIndex = p_ImageData.srcQueueFamily,
+            .dstQueueFamilyIndex = p_ImageData.dstQueueFamily,
+            .image = p_Image,
+            .subresourceRange = p_Range,
+        };
+        return *this;
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE BarrierBuilder<Storage>& BarrierBuilder<Storage>::image(const VkImage p_Image, const ImageProperties& p_Properties, const ImageBarrierData& p_ImageData)
+    {
+        return image(p_Image, p_Properties.subresourceRange(), p_ImageData);
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE BarrierBuilder<Storage>& BarrierBuilder<Storage>::image(const Image& p_Image, const ImageBarrierData& p_ImageData)
+    {
+        return image(p_Image.data.image, p_Image.properties, p_ImageData);
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE BarrierBuilder<Storage>& BarrierBuilder<Storage>::setDependencyFlags(const VkDependencyFlags p_Flags)
+    {
+        m_DependencyFlags = p_Flags;
+        return *this;
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE BarrierBuilder<Storage>& BarrierBuilder<Storage>::clear()
+    {
+        m_Storage.clear();
+        m_DependencyFlags = 0;
+        return *this;
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE VkDependencyInfo BarrierBuilder<Storage>::build() const
+    {
+        return VkDependencyInfo{
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .pNext = nullptr,
+            .dependencyFlags = m_DependencyFlags,
+            .memoryBarrierCount = m_Storage.memoryCount(),
+            .pMemoryBarriers = m_Storage.memoryData(),
+            .bufferMemoryBarrierCount = m_Storage.bufferCount(),
+            .pBufferMemoryBarriers = m_Storage.bufferData(),
+            .imageMemoryBarrierCount = m_Storage.imageCount(),
+            .pImageMemoryBarriers = m_Storage.imageData(),
+        };
+    }
+
+    template<BarrierStoragePolicy Storage>
+    VKP_FORCEINLINE void BarrierBuilder<Storage>::record(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb) const
+    {
+        const VkDependencyInfo l_Dependency = build();
+        p_DeviceData.deviceTable.vkCmdPipelineBarrier2(p_Cb, &l_Dependency);
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::setRenderArea(const VkRect2D p_Area)
+    {
+        m_RenderArea = p_Area;
+        return *this;
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::setRenderArea(const VkExtent2D p_Extent)
+    {
+        return setRenderArea(VkRect2D{ .offset = { .x = 0, .y = 0 }, .extent = p_Extent });
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::setLayers(const uint32_t p_LayerCount)
+    {
+        m_LayerCount = p_LayerCount;
+        return *this;
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::setViewMask(const uint32_t p_ViewMask)
+    {
+        m_ViewMask = p_ViewMask;
+        return *this;
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::setFlags(const VkRenderingFlags p_Flags)
+    {
+        m_Flags = p_Flags;
+        return *this;
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::color(VkRenderingAttachmentInfo p_Attachment)
+    {
+        if (m_ColorCount == kMaxColorAttachments)
+        {
+            throw std::runtime_error("vkp::cmd: no room for another color attachment");
+        }
+        p_Attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        m_ColorAttachments[m_ColorCount++] = p_Attachment;
+        return *this;
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::depth(VkRenderingAttachmentInfo p_Attachment)
+    {
+        p_Attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        m_DepthAttachment = p_Attachment;
+        m_HasDepth = true;
+        return *this;
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::stencil(VkRenderingAttachmentInfo p_Attachment)
+    {
+        p_Attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        m_StencilAttachment = p_Attachment;
+        m_HasStencil = true;
+        return *this;
+    }
+
+    VKP_FORCEINLINE RenderingInfoBuilder& RenderingInfoBuilder::clear()
+    {
+        m_ColorCount = 0;
+        m_HasDepth = false;
+        m_HasStencil = false;
+        return *this;
+    }
+
+    VKP_FORCEINLINE VkRenderingInfo RenderingInfoBuilder::build() const
+    {
+        return VkRenderingInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .pNext = nullptr,
+            .flags = m_Flags,
+            .renderArea = m_RenderArea,
+            .layerCount = m_LayerCount,
+            .viewMask = m_ViewMask,
+            .colorAttachmentCount = m_ColorCount,
+            .pColorAttachments = m_ColorCount == 0 ? nullptr : m_ColorAttachments.data(),
+            .pDepthAttachment = m_HasDepth ? &m_DepthAttachment : nullptr,
+            .pStencilAttachment = m_HasStencil ? &m_StencilAttachment : nullptr,
+        };
+    }
+
     template<typename F> requires std::invocable<F, VkCommandBuffer>
     VKP_FORCEINLINE void recordingScope(device::DeviceData& p_DeviceData, VkCommandBuffer p_Cb, const bool p_OneTime, F&& p_Lambda)
     {
@@ -20,7 +274,7 @@ namespace vkp::cmd
         p_DeviceData.deviceTable.vkEndCommandBuffer(p_Cb);
     }
 
-    template<bool AutoViewport = true, typename F> requires std::invocable<F, VkCommandBuffer>
+    template<bool AutoViewport, typename F> requires std::invocable<F, VkCommandBuffer>
     VKP_FORCEINLINE void renderScope(device::DeviceData& p_DeviceData, VkCommandBuffer p_Cb, const VkRenderingInfo& p_RenderInfo, F&& p_Lambda)
 	{
         p_DeviceData.deviceTable.vkCmdBeginRendering(p_Cb, &p_RenderInfo);
@@ -62,7 +316,7 @@ namespace vkp::cmd
     }
 
     template<typename F> requires std::invocable<F, VkCommandBuffer>
-    void immediateSubmitScope(device::DeviceData& p_DeviceData, const VkDevice p_Device, const VkCommandPool p_Pool, const VkQueue p_Queue, F&& p_Lambda, const VkFence p_UserFence = VK_NULL_HANDLE)
+    void immediateSubmitScope(device::DeviceData& p_DeviceData, const VkDevice p_Device, const VkCommandPool p_Pool, const VkQueue p_Queue, F&& p_Lambda, const VkFence p_UserFence)
     {
         VkFence l_Fence = p_UserFence;
         bool l_OwnedFence = false;
@@ -90,13 +344,25 @@ namespace vkp::cmd
 
         recordingScope(p_DeviceData, l_Cb, true, std::forward<F>(p_Lambda));
 
-        const VkSubmitInfo l_SubmitInfo{
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &l_Cb
+        const VkCommandBufferSubmitInfo l_CommandBuffer{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+            .pNext = nullptr,
+            .commandBuffer = l_Cb,
+            .deviceMask = 0,
+        };
+        const VkSubmitInfo2 l_SubmitInfo{
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+            .pNext = nullptr,
+            .flags = 0,
+            .waitSemaphoreInfoCount = 0,
+            .pWaitSemaphoreInfos = nullptr,
+            .commandBufferInfoCount = 1,
+            .pCommandBufferInfos = &l_CommandBuffer,
+            .signalSemaphoreInfoCount = 0,
+            .pSignalSemaphoreInfos = nullptr,
         };
 
-        p_DeviceData.deviceTable.vkQueueSubmit(p_Queue, 1, &l_SubmitInfo, l_Fence);
+        VULKAN_TRY(p_DeviceData.deviceTable.vkQueueSubmit2(p_Queue, 1, &l_SubmitInfo, l_Fence));
         p_DeviceData.deviceTable.vkWaitForFences(p_Device, 1, &l_Fence, VK_TRUE, UINT64_MAX);
         p_DeviceData.deviceTable.vkFreeCommandBuffers(p_Device, p_Pool, 1, &l_Cb);
 
@@ -107,11 +373,11 @@ namespace vkp::cmd
     }
 
     template<typename F> requires std::invocable<F, VkCommandBuffer>
-    VKP_FORCEINLINE void timestampScope(device::DeviceData& p_DeviceData, VkCommandBuffer p_Cb, const VkQueryPool p_Pool, const uint32_t p_StartQueryIdx, const VkPipelineStageFlagBits p_Stage, F&& p_Lambda)
+    VKP_FORCEINLINE void timestampScope(device::DeviceData& p_DeviceData, VkCommandBuffer p_Cb, const VkQueryPool p_Pool, const uint32_t p_StartQueryIdx, const VkPipelineStageFlags2 p_Stage, F&& p_Lambda)
     {
-        p_DeviceData.deviceTable.vkCmdWriteTimestamp(p_Cb, p_Stage, p_Pool, p_StartQueryIdx);
+        p_DeviceData.deviceTable.vkCmdWriteTimestamp2(p_Cb, p_Stage, p_Pool, p_StartQueryIdx);
         std::forward<F>(p_Lambda)(p_Cb);
-        p_DeviceData.deviceTable.vkCmdWriteTimestamp(p_Cb, p_Stage, p_Pool, p_StartQueryIdx + 1);
+        p_DeviceData.deviceTable.vkCmdWriteTimestamp2(p_Cb, p_Stage, p_Pool, p_StartQueryIdx + 1);
     }
 
     VKP_FORCEINLINE void pushConstants(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkPipelineLayout p_Layout, const VkShaderStageFlags p_StageFlags, const uint32_t p_Offset, const uint32_t p_Size, const void* p_Values)
@@ -119,506 +385,10 @@ namespace vkp::cmd
         p_DeviceData.deviceTable.vkCmdPushConstants(p_Cb, p_Layout, p_StageFlags, p_Offset, p_Size, p_Values);
     }
 
-	namespace detail
-	{
-        inline StageAccess2 srcStageAccess2(const VkImageLayout p_Layout)
-        {
-            switch (p_Layout)
-            {
-            case VK_IMAGE_LAYOUT_UNDEFINED:
-            case VK_IMAGE_LAYOUT_PREINITIALIZED:
-                return { .stage = VK_PIPELINE_STAGE_2_NONE, .access = VK_ACCESS_2_NONE };
-            case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT };
-            case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, .access = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, .access = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT };
-            default:
-                return { .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT };
-            }
-        }
-
-        inline StageAccess2 dstStageAccess2(const VkImageLayout p_Layout)
-        {
-            switch (p_Layout)
-            {
-            case VK_IMAGE_LAYOUT_UNDEFINED:
-            case VK_IMAGE_LAYOUT_PREINITIALIZED:
-                return { .stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, .access = VK_ACCESS_2_NONE };
-            case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-                return { .stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, .access = VK_ACCESS_2_NONE };
-            case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_READ_BIT };
-            case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT, .access = VK_ACCESS_2_TRANSFER_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, .access = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, .access = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT };
-            default:
-                return { .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, .access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT };
-            }
-        }
-
-        inline StageAccess srcStageAccess(const VkImageLayout p_Layout)
-        {
-            switch (p_Layout)
-            {
-            case VK_IMAGE_LAYOUT_UNDEFINED:
-            case VK_IMAGE_LAYOUT_PREINITIALIZED:
-                return { .stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, .access = 0 };
-            case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_TRANSFER_BIT, .access = VK_ACCESS_TRANSFER_READ_BIT };
-            case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_TRANSFER_BIT, .access = VK_ACCESS_TRANSFER_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, .access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT };
-            default:
-                return { .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT };
-            }
-        }
-
-        inline StageAccess dstStageAccess(const VkImageLayout p_Layout)
-        {
-            switch (p_Layout)
-            {
-            case VK_IMAGE_LAYOUT_UNDEFINED:
-            case VK_IMAGE_LAYOUT_PREINITIALIZED:
-                return { .stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, .access = 0 };
-            case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-                return { .stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, .access = 0 };
-            case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_TRANSFER_BIT, .access = VK_ACCESS_TRANSFER_READ_BIT };
-            case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_TRANSFER_BIT, .access = VK_ACCESS_TRANSFER_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, .access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, .access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT };
-            case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-                return { .stage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, .access = VK_ACCESS_SHADER_READ_BIT };
-            default:
-                return { .stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, .access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT };
-            }
-        }
-	}
-
-    VKP_FORCEINLINE void transitionImage(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkImage p_Image, const VkImageLayout p_InitialLayout, const VkImageLayout p_FinalLayout, const VkImageAspectFlags p_Aspect = VK_IMAGE_ASPECT_COLOR_BIT, const SyncMode p_Mode = SyncMode::Sync2)
+    template<uint32_t MaxCommandBuffers, uint32_t MaxWaits, uint32_t MaxSignals>
+    VKP_FORCEINLINE void submit2(const device::DeviceData& p_DeviceData, const VkQueue p_Queue, const std::span<const VkCommandBuffer> p_CommandBuffers, const std::span<const SemaphoreSubmit> p_Waits, const std::span<const SemaphoreSubmit> p_Signals, const VkFence p_Fence)
     {
-        const VkImageSubresourceRange l_Range{
-            .aspectMask = p_Aspect,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        };
-
-        if (p_Mode == SyncMode::Sync2)
-        {
-            const detail::StageAccess2 l_Src = detail::srcStageAccess2(p_InitialLayout);
-            const detail::StageAccess2 l_Dst = detail::dstStageAccess2(p_FinalLayout);
-            const VkImageMemoryBarrier2 l_Barrier{
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                .pNext = nullptr,
-                .srcStageMask = l_Src.stage,
-                .srcAccessMask = l_Src.access,
-                .dstStageMask = l_Dst.stage,
-                .dstAccessMask = l_Dst.access,
-                .oldLayout = p_InitialLayout,
-                .newLayout = p_FinalLayout,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = p_Image,
-                .subresourceRange = l_Range,
-            };
-            const VkDependencyInfo l_Dependency{
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .pNext = nullptr,
-                .dependencyFlags = 0,
-                .memoryBarrierCount = 0,
-                .pMemoryBarriers = nullptr,
-                .bufferMemoryBarrierCount = 0,
-                .pBufferMemoryBarriers = nullptr,
-                .imageMemoryBarrierCount = 1,
-                .pImageMemoryBarriers = &l_Barrier,
-            };
-            p_DeviceData.deviceTable.vkCmdPipelineBarrier2(p_Cb, &l_Dependency);
-        }
-        else
-        {
-            const detail::StageAccess l_Src = detail::srcStageAccess(p_InitialLayout);
-            const detail::StageAccess l_Dst = detail::dstStageAccess(p_FinalLayout);
-            const VkImageMemoryBarrier l_Barrier{
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .pNext = nullptr,
-                .srcAccessMask = l_Src.access,
-                .dstAccessMask = l_Dst.access,
-                .oldLayout = p_InitialLayout,
-                .newLayout = p_FinalLayout,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = p_Image,
-                .subresourceRange = l_Range,
-            };
-            p_DeviceData.deviceTable.vkCmdPipelineBarrier(p_Cb, l_Src.stage, l_Dst.stage, 0, 0, nullptr, 0, nullptr, 1, &l_Barrier);
-        }
-    }
-
-    VKP_FORCEINLINE void submit2(const device::DeviceData& p_DeviceData, const VkQueue p_Queue, const Submit2Info& p_Info, const VkFence p_Fence)
-    {
-        VkSemaphoreSubmitInfo l_Wait{
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .pNext = nullptr,
-            .semaphore = p_Info.waitSemaphore,
-            .value = 0,
-            .stageMask = p_Info.waitStage,
-            .deviceIndex = 0,
-        };
-        VkSemaphoreSubmitInfo l_Signal{
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .pNext = nullptr,
-            .semaphore = p_Info.signalSemaphore,
-            .value = 0,
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-            .deviceIndex = 0,
-        };
-        const VkCommandBufferSubmitInfo l_CommandBuffer{
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-            .pNext = nullptr,
-            .commandBuffer = p_Info.commandBuffer,
-            .deviceMask = 0,
-        };
-        const VkSubmitInfo2 l_Submit{
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-            .pNext = nullptr,
-            .flags = 0,
-            .waitSemaphoreInfoCount = 1,
-            .pWaitSemaphoreInfos = &l_Wait,
-            .commandBufferInfoCount = 1,
-            .pCommandBufferInfos = &l_CommandBuffer,
-            .signalSemaphoreInfoCount = 1,
-            .pSignalSemaphoreInfos = &l_Signal,
-        };
-        VULKAN_TRY(p_DeviceData.deviceTable.vkQueueSubmit2(p_Queue, 1, &l_Submit, p_Fence));
-    }
-
-    template<SyncMode Mode = SyncMode::Sync2, typename F> requires std::invocable<F, VkCommandBuffer>
-    void frameRenderScope(device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const FrameSpec& p_Spec, F&& p_Lambda)
-    {
-        constexpr VkImageLayout kColorLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        constexpr VkImageLayout kDepthLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        for (const AttachmentSpec& l_Color : p_Spec.colors)
-        {
-            transitionImage(p_DeviceData, p_Cb, l_Color.image, l_Color.initialLayout, kColorLayout, VK_IMAGE_ASPECT_COLOR_BIT, Mode);
-        }
-
-        std::array<VkRenderingAttachmentInfo, 8> l_ColorInfos{};
-        for (uint32_t i = 0; i < p_Spec.colors.size(); ++i)
-        {
-			const AttachmentSpec& l_Color = p_Spec.colors[i];
-            l_ColorInfos[i] = {
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .pNext = nullptr,
-                .imageView = l_Color.view,
-                .imageLayout = kColorLayout,
-                .resolveMode = l_Color.resolveMode,
-                .resolveImageView = l_Color.resolveView,
-                .resolveImageLayout = l_Color.resolveFinalLayout,
-                .loadOp = l_Color.loadOp,
-                .storeOp = l_Color.storeOp,
-                .clearValue = l_Color.clearValue,
-            };
-        }
-
-        if (p_Spec.depth)
-        {
-            transitionImage(p_DeviceData, p_Cb, p_Spec.depth->image, p_Spec.depth->initialLayout, kDepthLayout, VK_IMAGE_ASPECT_DEPTH_BIT, Mode);
-        }
-        std::optional<VkRenderingAttachmentInfo> l_DepthInfo;
-        if (p_Spec.depth)
-        {
-            l_DepthInfo = VkRenderingAttachmentInfo{
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .pNext = nullptr,
-                .imageView = p_Spec.depth->view,
-                .imageLayout = kDepthLayout,
-                .resolveMode = p_Spec.depth->resolveMode,
-                .resolveImageView = p_Spec.depth->resolveView,
-                .resolveImageLayout = p_Spec.depth->resolveFinalLayout,
-                .loadOp = p_Spec.depth->loadOp,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                .clearValue = p_Spec.depth->clearValue,
-            };
-        }
-
-        const VkRenderingInfo l_RenderingInfo{
-            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .renderArea = VkRect2D{ .offset = { .x = 0, .y = 0 }, .extent = p_Spec.extent },
-            .layerCount = p_Spec.layerCount,
-            .viewMask = p_Spec.viewMask,
-            .colorAttachmentCount = static_cast<uint32_t>(p_Spec.colors.size()),
-            .pColorAttachments = l_ColorInfos.data(),
-            .pDepthAttachment = p_Spec.depth ? &*l_DepthInfo : nullptr,
-            .pStencilAttachment = nullptr,
-        };
-
-        renderScope(p_DeviceData, p_Cb, l_RenderingInfo, std::forward<F>(p_Lambda));
-
-        for (const AttachmentSpec& l_Color : p_Spec.colors)
-        {
-            transitionImage(p_DeviceData, p_Cb, l_Color.image, kColorLayout, l_Color.finalLayout, VK_IMAGE_ASPECT_COLOR_BIT, Mode);
-        }
-
-        if (p_Spec.depth)
-        {
-            transitionImage(p_DeviceData, p_Cb, p_Spec.depth->image, kDepthLayout, p_Spec.depth->finalLayout, VK_IMAGE_ASPECT_DEPTH_BIT, Mode);
-        }
-    }
-
-    VKP_FORCEINLINE void bufferBarrier2(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkBuffer p_Buffer, const VkDeviceSize p_Offset, const VkDeviceSize p_Size, const VkPipelineStageFlags2 p_SrcStage, const VkAccessFlags2 p_SrcAccess, const VkPipelineStageFlags2 p_DstStage, const VkAccessFlags2 p_DstAccess)
-    {
-        const VkBufferMemoryBarrier2 l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = p_SrcStage,
-            .srcAccessMask = p_SrcAccess,
-            .dstStageMask = p_DstStage,
-            .dstAccessMask = p_DstAccess,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = p_Buffer,
-            .offset = p_Offset,
-            .size = p_Size,
-        };
-        const VkDependencyInfo l_Dependency{
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .pNext = nullptr,
-            .dependencyFlags = 0,
-            .memoryBarrierCount = 0,
-            .pMemoryBarriers = nullptr,
-            .bufferMemoryBarrierCount = 1,
-            .pBufferMemoryBarriers = &l_Barrier,
-            .imageMemoryBarrierCount = 0,
-            .pImageMemoryBarriers = nullptr,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier2(p_Cb, &l_Dependency);
-    }
-
-    VKP_FORCEINLINE void bufferBarrier(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkBuffer p_Buffer, const VkDeviceSize p_Offset, const VkDeviceSize p_Size, const VkPipelineStageFlags p_SrcStage, const VkAccessFlags p_SrcAccess, const VkPipelineStageFlags p_DstStage, const VkAccessFlags p_DstAccess)
-    {
-        const VkBufferMemoryBarrier l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = p_SrcAccess,
-            .dstAccessMask = p_DstAccess,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = p_Buffer,
-            .offset = p_Offset,
-            .size = p_Size,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier(p_Cb, p_SrcStage, p_DstStage, 0, 0, nullptr, 1, &l_Barrier, 0, nullptr);
-    }
-
-    VKP_FORCEINLINE void memoryBarrier2(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkPipelineStageFlags2 p_SrcStage, const VkAccessFlags2 p_SrcAccess, const VkPipelineStageFlags2 p_DstStage, const VkAccessFlags2 p_DstAccess)
-    {
-        const VkMemoryBarrier2 l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = p_SrcStage,
-            .srcAccessMask = p_SrcAccess,
-            .dstStageMask = p_DstStage,
-            .dstAccessMask = p_DstAccess,
-        };
-        const VkDependencyInfo l_Dependency{
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .pNext = nullptr,
-            .dependencyFlags = 0,
-            .memoryBarrierCount = 1,
-            .pMemoryBarriers = &l_Barrier,
-            .bufferMemoryBarrierCount = 0,
-            .pBufferMemoryBarriers = nullptr,
-            .imageMemoryBarrierCount = 0,
-            .pImageMemoryBarriers = nullptr,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier2(p_Cb, &l_Dependency);
-    }
-
-    VKP_FORCEINLINE void memoryBarrier(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkPipelineStageFlags p_SrcStage, const VkAccessFlags p_SrcAccess, const VkPipelineStageFlags p_DstStage, const VkAccessFlags p_DstAccess)
-    {
-        const VkMemoryBarrier l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = p_SrcAccess,
-            .dstAccessMask = p_DstAccess,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier(p_Cb, p_SrcStage, p_DstStage, 0, 1, &l_Barrier, 0, nullptr, 0, nullptr);
-    }
-
-    VKP_FORCEINLINE void bufferOwnershipTransfer2(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkBuffer p_Buffer, const VkDeviceSize p_Offset, const VkDeviceSize p_Size, const uint32_t p_SrcQueueFamily, const uint32_t p_DstQueueFamily, const VkPipelineStageFlags2 p_SrcStage, const VkPipelineStageFlags2 p_DstStage)
-    {
-        const VkBufferMemoryBarrier2 l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = p_SrcStage,
-            .srcAccessMask = VK_ACCESS_2_NONE,
-            .dstStageMask = p_DstStage,
-            .dstAccessMask = VK_ACCESS_2_NONE,
-            .srcQueueFamilyIndex = p_SrcQueueFamily,
-            .dstQueueFamilyIndex = p_DstQueueFamily,
-            .buffer = p_Buffer,
-            .offset = p_Offset,
-            .size = p_Size,
-        };
-        const VkDependencyInfo l_Dependency{
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .pNext = nullptr,
-            .dependencyFlags = 0,
-            .memoryBarrierCount = 0,
-            .pMemoryBarriers = nullptr,
-            .bufferMemoryBarrierCount = 1,
-            .pBufferMemoryBarriers = &l_Barrier,
-            .imageMemoryBarrierCount = 0,
-            .pImageMemoryBarriers = nullptr,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier2(p_Cb, &l_Dependency);
-    }
-
-    VKP_FORCEINLINE void bufferOwnershipTransfer(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkBuffer p_Buffer, const VkDeviceSize p_Offset, const VkDeviceSize p_Size, const uint32_t p_SrcQueueFamily, const uint32_t p_DstQueueFamily, const VkPipelineStageFlags p_SrcStage, const VkPipelineStageFlags p_DstStage)
-    {
-        const VkBufferMemoryBarrier l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = 0,
-            .dstAccessMask = 0,
-            .srcQueueFamilyIndex = p_SrcQueueFamily,
-            .dstQueueFamilyIndex = p_DstQueueFamily,
-            .buffer = p_Buffer,
-            .offset = p_Offset,
-            .size = p_Size,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier(p_Cb, p_SrcStage, p_DstStage, 0, 0, nullptr, 1, &l_Barrier, 0, nullptr);
-    }
-
-    VKP_FORCEINLINE void imageOwnershipTransfer2(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkImage p_Image, const VkImageLayout p_InitialLayout, const VkImageLayout p_FinalLayout, const uint32_t p_SrcQueueFamily, const uint32_t p_DstQueueFamily)
-    {
-        const detail::StageAccess2 l_Src = detail::srcStageAccess2(p_InitialLayout);
-        const detail::StageAccess2 l_Dst = detail::dstStageAccess2(p_FinalLayout);
-        const VkImageMemoryBarrier2 l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = l_Src.stage,
-            .srcAccessMask = VK_ACCESS_2_NONE,
-            .dstStageMask = l_Dst.stage,
-            .dstAccessMask = VK_ACCESS_2_NONE,
-            .oldLayout = p_InitialLayout,
-            .newLayout = p_FinalLayout,
-            .srcQueueFamilyIndex = p_SrcQueueFamily,
-            .dstQueueFamilyIndex = p_DstQueueFamily,
-            .image = p_Image,
-            .subresourceRange = VkImageSubresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1 },
-        };
-        const VkDependencyInfo l_Dependency{
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .pNext = nullptr,
-            .dependencyFlags = 0,
-            .memoryBarrierCount = 0,
-            .pMemoryBarriers = nullptr,
-            .bufferMemoryBarrierCount = 0,
-            .pBufferMemoryBarriers = nullptr,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &l_Barrier,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier2(p_Cb, &l_Dependency);
-    }
-
-    VKP_FORCEINLINE void imageOwnershipTransfer(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkImage p_Image, const VkImageLayout p_InitialLayout, const VkImageLayout p_FinalLayout, const uint32_t p_SrcQueueFamily, const uint32_t p_DstQueueFamily)
-    {
-        const detail::StageAccess l_Src = detail::srcStageAccess(p_InitialLayout);
-        const detail::StageAccess l_Dst = detail::dstStageAccess(p_FinalLayout);
-        const VkImageMemoryBarrier l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = 0,
-            .dstAccessMask = 0,
-            .oldLayout = p_InitialLayout,
-            .newLayout = p_FinalLayout,
-            .srcQueueFamilyIndex = p_SrcQueueFamily,
-            .dstQueueFamilyIndex = p_DstQueueFamily,
-            .image = p_Image,
-            .subresourceRange = VkImageSubresourceRange{ .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1 },
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier(p_Cb, l_Src.stage, l_Dst.stage, 0, 0, nullptr, 0, nullptr, 1, &l_Barrier);
-    }
-
-    VKP_FORCEINLINE void imageBarrier2(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkImage p_Image, const VkImageLayout p_InitialLayout, const VkImageLayout p_FinalLayout, const VkImageSubresourceRange p_SubresourceRange, const VkPipelineStageFlags2 p_SrcStage, const VkAccessFlags2 p_SrcAccess, const VkPipelineStageFlags2 p_DstStage, const VkAccessFlags2 p_DstAccess)
-    {
-        const VkImageMemoryBarrier2 l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .pNext = nullptr,
-            .srcStageMask = p_SrcStage,
-            .srcAccessMask = p_SrcAccess,
-            .dstStageMask = p_DstStage,
-            .dstAccessMask = p_DstAccess,
-            .oldLayout = p_InitialLayout,
-            .newLayout = p_FinalLayout,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = p_Image,
-            .subresourceRange = p_SubresourceRange,
-        };
-        const VkDependencyInfo l_Dependency{
-            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .pNext = nullptr,
-            .dependencyFlags = 0,
-            .memoryBarrierCount = 0,
-            .pMemoryBarriers = nullptr,
-            .bufferMemoryBarrierCount = 0,
-            .pBufferMemoryBarriers = nullptr,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &l_Barrier,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier2(p_Cb, &l_Dependency);
-    }
-
-    VKP_FORCEINLINE void imageBarrier(const device::DeviceData& p_DeviceData, const VkCommandBuffer p_Cb, const VkImage p_Image, const VkImageLayout p_InitialLayout, const VkImageLayout p_FinalLayout, const VkImageSubresourceRange p_SubresourceRange, const VkPipelineStageFlags p_SrcStage, const VkAccessFlags p_SrcAccess, const VkPipelineStageFlags p_DstStage, const VkAccessFlags p_DstAccess)
-    {
-        const VkImageMemoryBarrier l_Barrier{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .pNext = nullptr,
-            .srcAccessMask = p_SrcAccess,
-            .dstAccessMask = p_DstAccess,
-            .oldLayout = p_InitialLayout,
-            .newLayout = p_FinalLayout,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = p_Image,
-            .subresourceRange = p_SubresourceRange,
-        };
-        p_DeviceData.deviceTable.vkCmdPipelineBarrier(p_Cb, p_SrcStage, p_DstStage, 0, 0, nullptr, 0, nullptr, 1, &l_Barrier);
-    }
-
-    template<typename Allocator = std::allocator<void>>
-    VKP_FORCEINLINE void submit2(const device::DeviceData& p_DeviceData, const VkQueue p_Queue, const std::span<const VkCommandBuffer> p_CommandBuffers, const std::span<const SemaphoreSubmit> p_Waits, const std::span<const SemaphoreSubmit> p_Signals, const VkFence p_Fence, const Allocator& p_Allocator = {})
-    {
-        using SemaphoreInfoAlloc = std::allocator_traits<Allocator>::template rebind_alloc<VkSemaphoreSubmitInfo>;
-        using CommandBufferInfoAlloc = std::allocator_traits<Allocator>::template rebind_alloc<VkCommandBufferSubmitInfo>;
-
-    	SmallVector<VkSemaphoreSubmitInfo, 8, SemaphoreInfoAlloc> l_WaitInfos(p_Allocator);
+        StaticVector<VkSemaphoreSubmitInfo, MaxWaits> l_WaitInfos;
         for (const SemaphoreSubmit& l_Wait : p_Waits)
         {
             l_WaitInfos.push_back({
@@ -631,7 +401,7 @@ namespace vkp::cmd
                 });
         }
 
-        SmallVector<VkSemaphoreSubmitInfo, 8, SemaphoreInfoAlloc> l_SignalInfos(p_Allocator);
+        StaticVector<VkSemaphoreSubmitInfo, MaxSignals> l_SignalInfos;
         for (const SemaphoreSubmit& l_Signal : p_Signals)
         {
             l_SignalInfos.push_back({
@@ -644,7 +414,7 @@ namespace vkp::cmd
                 });
         }
 
-        SmallVector<VkCommandBufferSubmitInfo, 8, CommandBufferInfoAlloc> l_CbInfos(p_Allocator);
+        StaticVector<VkCommandBufferSubmitInfo, MaxCommandBuffers> l_CbInfos;
         for (const VkCommandBuffer l_Cb : p_CommandBuffers)
         {
             l_CbInfos.push_back({
@@ -669,7 +439,7 @@ namespace vkp::cmd
         VULKAN_TRY(p_DeviceData.deviceTable.vkQueueSubmit2(p_Queue, 1, &l_Submit, p_Fence));
     }
 
-    VKP_FORCEINLINE void waitTimeline(const device::DeviceData& p_DeviceData, const VkSemaphore p_Timeline, const uint64_t p_Value, const uint64_t p_Timeout = UINT64_MAX)
+    VKP_FORCEINLINE void waitTimeline(const device::DeviceData& p_DeviceData, const VkSemaphore p_Timeline, const uint64_t p_Value, const uint64_t p_Timeout)
     {
         const VkSemaphoreWaitInfo l_Wait{
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,

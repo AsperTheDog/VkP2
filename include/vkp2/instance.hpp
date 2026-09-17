@@ -1,5 +1,6 @@
 #pragma once
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -26,11 +27,13 @@ namespace vkp
 		InstanceBuilder& addExtensions(std::span<const char* const> p_Extensions);
 		
 		[[nodiscard]] ReturnData build() const;
-	private:
-		VkInstanceCreateInfo m_createInfo{};
-		VkApplicationInfo m_appInfo{};
 
+	private:
+		VkApplicationInfo m_AppInfo{};
 		VkDebugUtilsMessengerCreateInfoEXT m_DebugCreateInfo{};
+
+		std::string m_ApplicationName;
+		std::string m_EngineName;
 
 		std::vector<const char*> m_Layers{};
 		std::vector<const char*> m_Extensions{};

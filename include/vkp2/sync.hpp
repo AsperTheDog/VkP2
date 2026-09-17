@@ -40,4 +40,22 @@ namespace vkp
 		VULKAN_TRY(vkCreateFence(p_Device, &l_CreateInfo, nullptr, &l_Fence));
 		return l_Fence;
 	}
+
+	inline void destroySemaphore(const VkDevice p_Device, VkSemaphore& p_Semaphore)
+	{
+		if (p_Semaphore != VK_NULL_HANDLE)
+		{
+			vkDestroySemaphore(p_Device, p_Semaphore, nullptr);
+			p_Semaphore = VK_NULL_HANDLE;
+		}
+	}
+
+	inline void destroyFence(const VkDevice p_Device, VkFence& p_Fence)
+	{
+		if (p_Fence != VK_NULL_HANDLE)
+		{
+			vkDestroyFence(p_Device, p_Fence, nullptr);
+			p_Fence = VK_NULL_HANDLE;
+		}
+	}
 }
