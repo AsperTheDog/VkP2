@@ -16,7 +16,7 @@ namespace vkp
 			.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 			.pNext = nullptr,
 			.flags = flags,
-			.imageType = imageType,
+			.imageType = extent.height == 1 && extent.depth == 1 ? VK_IMAGE_TYPE_1D : (extent.depth == 1 ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_3D),
 			.format = format,
 			.extent = extent,
 			.mipLevels = mipLevels,
@@ -72,7 +72,6 @@ namespace vkp
 		{
 			return ImageProperties{
 				.flags = p_ImageInfo.flags,
-				.imageType = p_ImageInfo.imageType,
 				.format = p_ImageInfo.format,
 				.extent = p_ImageInfo.extent,
 				.mipLevels = p_ImageInfo.mipLevels,
@@ -225,7 +224,7 @@ namespace vkp
 
 		void* l_Mapped = nullptr;
 		vmaMapMemory(p_DeviceData.allocator, l_Staging.alloc, &l_Mapped);
-		std::memcpy(l_Mapped, p_Data, static_cast<size_t>(p_Size));
+		std::memcpy(l_Mapped, p_Data, p_Size);
 		vmaFlushAllocation(p_DeviceData.allocator, l_Staging.alloc, 0, VK_WHOLE_SIZE);
 		vmaUnmapMemory(p_DeviceData.allocator, l_Staging.alloc);
 

@@ -17,7 +17,6 @@ namespace vkp
 	struct ImageProperties
 	{
 		VkImageCreateFlags flags = 0;
-		VkImageType imageType = VK_IMAGE_TYPE_2D;
 		VkFormat format = VK_FORMAT_UNDEFINED;
 		VkExtent3D extent{};
 		uint32_t mipLevels = 1;
