@@ -23,7 +23,7 @@ namespace vkp::dyn
 		using propagate_on_container_swap = std::false_type;
 		using is_always_equal = std::false_type;
 
-		ArenaAllocator() = delete;
+		ArenaAllocator() = default;
 
 		explicit ArenaAllocator(FrameArena& p_Arena) noexcept : m_Arena(&p_Arena) {}
 
@@ -52,12 +52,13 @@ namespace vkp::dyn
 		friend bool operator==(const ArenaAllocator&, const ArenaAllocator&) = default;
 
 	private:
-		FrameArena* m_Arena;
+		FrameArena* m_Arena = nullptr;
 	};
 
 	class FrameArena
 	{
 	public:
+		using Allocator = ArenaAllocator<void>;
 		using GrowHandler = void (*)(size_t p_RequestedBytes, size_t p_ChunkBytes, void* p_UserData);
 
 		struct ChunkSource

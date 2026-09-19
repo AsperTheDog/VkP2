@@ -549,12 +549,13 @@ namespace vkp::pipeline
 	}
 
 	template<StoragePolicy TStorage>
-	TStorage::DescriptorSetLayouts BasicPipelineBuilder<TStorage>::createDescriptorSetLayouts(const device::DeviceData& p_DeviceData) const
+	template<StoragePolicy TStorage2>
+	typename TStorage2::DescriptorSetLayouts BasicPipelineBuilder<TStorage>::createDescriptorSetLayouts(const device::DeviceData& p_DeviceData, const typename TStorage2::ProtoAllocator& p_Allocator) const
 	{
-		typename TStorage::DescriptorSetLayouts l_Created = makeContainer<typename TStorage::DescriptorSetLayouts>();
+		typename TStorage2::DescriptorSetLayouts l_Created = TStorage2::template make<typename TStorage2::DescriptorSetLayouts>(p_Allocator);
 		if (m_Reflection)
 		{
-			desc::detail::createSetLayouts<desc::detail::Storage<typename TStorage::DescriptorSetLayouts, typename TStorage::DescriptorBindings, typename TStorage::DescriptorBindingFlags>>(p_DeviceData, m_Reflection->layout(), stageMask(), l_Created);
+			desc::detail::createSetLayouts<desc::detail::Storage<typename TStorage2::DescriptorSetLayouts, typename TStorage2::DescriptorBindings, typename TStorage2::DescriptorBindingFlags>>(p_DeviceData, m_Reflection->layout(), stageMask(), l_Created);
 		}
 		return l_Created;
 	}
@@ -583,8 +584,6 @@ namespace vkp::pipeline
 			return;
 		}
 
-		/// Locations run across the whole entry point, while offsets restart for each parameter: parameters declare
-		/// separate vertex buffers, so each one interleaves from byte zero and takes the next binding number.
 		struct Cursor
 		{
 			uint32_t location = 0;
@@ -686,7 +685,8 @@ namespace vkp::pipeline
 	}
 
 	template<StoragePolicy TStorage>
-	BasicPipelineData<TStorage> BasicPipelineBuilder<TStorage>::buildGraphics(const device::DeviceData& p_DeviceData, const VkPipelineCache p_PipelineCache)
+	template<StoragePolicy TStorage2>
+	BasicPipelineData<TStorage2> BasicPipelineBuilder<TStorage>::buildGraphics(const device::DeviceData& p_DeviceData, const typename TStorage2::ProtoAllocator p_Allocator, const VkPipelineCache p_PipelineCache)
 	{
 		if (m_Stages.empty())
 		{
@@ -709,11 +709,11 @@ namespace vkp::pipeline
 				generateVertexInput();
 			}
 		}
-
-		typename TStorage::DescriptorSetLayouts l_CreatedLayouts = makeContainer<typename TStorage::DescriptorSetLayouts>();
+		
+		typename TStorage2::DescriptorSetLayouts l_CreatedLayouts = TStorage2::template make<typename TStorage2::DescriptorSetLayouts>(p_Allocator);
 		std::span<const VkDescriptorSetLayout> l_Layouts;
 		VkPipelineLayout l_Layout = VK_NULL_HANDLE;
-		BasicPipelineData<TStorage> l_Out;
+		BasicPipelineData<TStorage2> l_Out;
 		l_Out.ownsLayout = m_InjectedLayout == VK_NULL_HANDLE;
 
 		if (m_InjectedLayout != VK_NULL_HANDLE)
@@ -724,7 +724,7 @@ namespace vkp::pipeline
 		{
 			if (m_Reflection)
 			{
-				l_CreatedLayouts = createDescriptorSetLayouts(p_DeviceData);
+				l_CreatedLayouts = createDescriptorSetLayouts<TStorage2>(p_DeviceData, p_Allocator);
 				l_Layouts = l_CreatedLayouts;
 			}
 			else
@@ -910,11 +910,10 @@ namespace vkp::pipeline
 		const VkPipelineDepthStencilStateCreateInfo* l_DepthStencilState = m_DepthStencilOverride ? &*m_DepthStencilOverride : &l_DepthInfo;
 		const VkPipelineColorBlendStateCreateInfo* l_BlendState = m_ColorBlendOverride ? &*m_ColorBlendOverride : &l_BlendInfo;
 
-		const bool l_TessellationActive = m_Topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST
-			|| std::ranges::any_of(m_Stages, [](const typename TStorage::Stage& p_Stage)
-			{
-				return p_Stage.stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT || p_Stage.stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-			});
+		const bool l_TessellationActive = m_Topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST || std::ranges::any_of(m_Stages, [](const typename TStorage::Stage& p_Stage)
+		{
+			return p_Stage.stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT || p_Stage.stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+		});
 		const VkPipelineTessellationStateCreateInfo* l_TessState = nullptr;
 		VkPipelineTessellationStateCreateInfo l_TessInfo{};
 		if (l_TessellationActive)
@@ -965,17 +964,18 @@ namespace vkp::pipeline
 	}
 
 	template<StoragePolicy TStorage>
-	BasicPipelineData<TStorage> BasicPipelineBuilder<TStorage>::buildCompute(const device::DeviceData& p_DeviceData, const VkPipelineCache p_PipelineCache)
+	template<StoragePolicy TStorage2>
+	BasicPipelineData<TStorage2> BasicPipelineBuilder<TStorage>::buildCompute(const device::DeviceData& p_DeviceData, const typename TStorage2::ProtoAllocator p_Allocator, const VkPipelineCache p_PipelineCache)
 	{
 		if (m_Stages.size() != 1 || m_Stages[0].stage != VK_SHADER_STAGE_COMPUTE_BIT)
 		{
 			throw std::runtime_error("vkp::pipeline: compute pipeline requires exactly one compute stage");
 		}
 
-		typename TStorage::DescriptorSetLayouts l_CreatedLayouts = makeContainer<typename TStorage::DescriptorSetLayouts>();
+		typename TStorage2::DescriptorSetLayouts l_CreatedLayouts = TStorage2::template make<typename TStorage2::DescriptorSetLayouts>(p_Allocator);
 		std::span<const VkDescriptorSetLayout> l_Layouts;
 		VkPipelineLayout l_Layout = VK_NULL_HANDLE;
-		BasicPipelineData<TStorage> l_Out;
+		BasicPipelineData<TStorage2> l_Out;
 		l_Out.ownsLayout = m_InjectedLayout == VK_NULL_HANDLE;
 
 		if (m_InjectedLayout != VK_NULL_HANDLE)
@@ -986,7 +986,7 @@ namespace vkp::pipeline
 		{
 			if (m_Reflection)
 			{
-				l_CreatedLayouts = createDescriptorSetLayouts(p_DeviceData);
+				l_CreatedLayouts = createDescriptorSetLayouts<TStorage2>(p_DeviceData, p_Allocator);
 				l_Layouts = l_CreatedLayouts;
 			}
 			else

@@ -74,6 +74,8 @@ namespace vkp::pipeline
 		typename T::Stage;
 		typename T::Stages;
 		typename T::DescriptorSetLayouts;
+		typename T::DescriptorBindings;
+		typename T::DescriptorBindingFlags;
 		typename T::PushConstantRanges;
 		typename T::ColorFormats;
 		typename T::VertexBindings;
@@ -84,6 +86,8 @@ namespace vkp::pipeline
 	}
 	&& Sequence<typename T::Stages>
 	&& Sequence<typename T::DescriptorSetLayouts>
+	&& Sequence<typename T::DescriptorBindings>
+	&& Sequence<typename T::DescriptorBindingFlags>
 	&& Sequence<typename T::PushConstantRanges>
 	&& Sequence<typename T::ColorFormats>
 	&& Sequence<typename T::VertexBindings>
@@ -94,6 +98,7 @@ namespace vkp::pipeline
 	&& requires(const typename T::ProtoAllocator& p_Allocator)
 	{
 		{ T::template make<typename T::Stages>(p_Allocator) } -> std::same_as<typename T::Stages>;
+		{ T::template make<typename T::DescriptorSetLayouts>(p_Allocator) } -> std::same_as<typename T::DescriptorSetLayouts>;
 	};
 
 	template<PipelineCapacities Capacities>
@@ -109,7 +114,7 @@ namespace vkp::pipeline
 		using DescriptorBindings = StaticVector<VkDescriptorSetLayoutBinding, Capacities.descriptorBindings>;
 		using DescriptorBindingFlags = StaticVector<VkDescriptorBindingFlags, Capacities.descriptorBindings>;
 		using PushConstantRanges = StaticVector<VkPushConstantRange, Capacities.pushConstantRanges>;
-		using ColorFormats = StaticVector<VkFormat, 8>;   // color attachments are capped at 8 by the hardware
+		using ColorFormats = StaticVector<VkFormat, 8>;
 		using VertexBindings = StaticVector<VkVertexInputBindingDescription, Capacities.vertexBindings>;
 		using VertexAttributes = StaticVector<VkVertexInputAttributeDescription, Capacities.vertexAttributes>;
 		using DynamicStates = StaticVector<VkDynamicState, Capacities.dynamicStates>;
@@ -171,8 +176,11 @@ namespace vkp::pipeline
 		BasicPipelineBuilder& setDynamicBlendConstants();
 		BasicPipelineBuilder& addDynamicState(VkDynamicState p_State);
 
-		[[nodiscard]] BasicPipelineData<TStorage> buildGraphics(const device::DeviceData& p_DeviceData, VkPipelineCache p_PipelineCache = VK_NULL_HANDLE);
-		[[nodiscard]] BasicPipelineData<TStorage> buildCompute(const device::DeviceData& p_DeviceData, VkPipelineCache p_PipelineCache = VK_NULL_HANDLE);
+		template<StoragePolicy TStorage2>
+		[[nodiscard]] BasicPipelineData<TStorage2> buildGraphics(const device::DeviceData& p_DeviceData, typename TStorage2::ProtoAllocator p_Allocator = {}, VkPipelineCache p_PipelineCache = VK_NULL_HANDLE);
+
+		template<StoragePolicy TStorage2>
+		[[nodiscard]] BasicPipelineData<TStorage2> buildCompute(const device::DeviceData& p_DeviceData, typename TStorage2::ProtoAllocator p_Allocator = {}, VkPipelineCache p_PipelineCache = VK_NULL_HANDLE);
 
 	private:
 		template<Sequence TContainer>
@@ -180,7 +188,9 @@ namespace vkp::pipeline
 
 		VkShaderStageFlags stageMask() const;
 		void generateVertexInput();
-		TStorage::DescriptorSetLayouts createDescriptorSetLayouts(const device::DeviceData& p_DeviceData) const;
+
+		template<StoragePolicy TStorage2>
+		[[nodiscard]] typename TStorage2::DescriptorSetLayouts createDescriptorSetLayouts(const device::DeviceData& p_DeviceData, const typename TStorage2::ProtoAllocator& p_Allocator) const;
 
 		TStorage::ProtoAllocator m_Allocator{};
 		TStorage::Stages m_Stages;

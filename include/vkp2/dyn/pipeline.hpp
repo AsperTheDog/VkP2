@@ -43,4 +43,10 @@ namespace vkp::dyn
 
 	template<typename Allocator = std::allocator<void>>
 	using PipelineData = pipeline::BasicPipelineData<PipelineStorage<Allocator>>;
+
+	template<typename Allocator>
+	[[nodiscard]] PipelineBuilder<Allocator> makePipelineBuilder(const Allocator& p_Allocator)
+	{
+		return PipelineBuilder<Allocator>(p_Allocator);
+	}
 }
